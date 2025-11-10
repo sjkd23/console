@@ -34,7 +34,7 @@ async function applyOne(path: string, filename: string) {
 
 async function main() {
     await ensureTable();
-    const dir = join(process.cwd(), 'db', 'migrations');
+    const dir = join(process.cwd(), 'src', 'db', 'migrations');
     const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
     for (const f of files) {
         if (await alreadyApplied(f)) {

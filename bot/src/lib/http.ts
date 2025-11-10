@@ -15,3 +15,34 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
     }
     return res.json() as Promise<T>;
 }
+
+export async function patchJSON<T>(path: string, body: unknown): Promise<T> {
+    const base = process.env.BACKEND_URL!;
+    const res = await fetch(`${base}${path}`, {
+        method: 'PATCH',
+        headers: {
+            'content-type': 'application/json',
+            'x-api-key': process.env.BACKEND_API_KEY!,
+        },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Backend ${res.status}: ${text}`);
+    }
+    return res.json() as Promise<T>;
+}
+
+export async function getJSON<T>(path: string): Promise<T> {
+    const base = process.env.BACKEND_URL!;
+    const res = await fetch(`${base}${path}`, {
+        method: 'GET',
+        headers: { 'x-api-key': process.env.BACKEND_API_KEY! }
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Backend ${res.status}: ${text}`);
+    }
+    return res.json() as Promise<T>;
+}
+

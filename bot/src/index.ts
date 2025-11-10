@@ -11,9 +11,9 @@ import {
     ButtonInteraction
 } from 'discord.js';
 import { commands } from './commands/index.js';
-import { handleOrganizerPanel } from './interactions/buttons/organizerPanel.js';
+import { handleOrganizerPanel } from './interactions/buttons/organizer-panel.js';
 import { handleJoin } from './interactions/buttons/join.js';
-import { handleStatus } from './interactions/buttons/status.js';
+import { handleStatus } from './interactions/buttons/run-status.js';
 
 const token = process.env.SECRET_KEY!;
 const client = new Client({
@@ -25,11 +25,12 @@ client.once('ready', () => {
     console.log(`Logged in as ${client.user?.tag}`);
 });
 
-client.on('interactionCreate', async (interaction: Interaction) => {
+client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isAutocomplete()) {
             const cmd = commands.find(c => c.data.name === interaction.commandName);
             if (cmd?.autocomplete) await cmd.autocomplete(interaction);
+            else await interaction.respond([]);
             return;
         }
 
@@ -39,29 +40,39 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             return;
         }
 
-        // inside interactionCreate:
         if (interaction.isButton()) {
-            const btn = interaction;
-            const [ns, action, runId] = btn.customId.split(':');
-
+            const [ns, action, runId] = interaction.customId.split(':');
             if (ns !== 'run' || !runId) return;
 
-            if (action === 'org' || action === 'panel') return handleOrganizerPanel(btn, runId);
-            if (action === 'join') return handleJoin(btn, runId);
-            if (action === 'start') return handleStatus(btn, runId, 'started');
-            if (action === 'end') return handleStatus(btn, runId, 'ended');
+            if (action === 'org' || action === 'panel') {
+                await handleOrganizerPanel(interaction, runId);
+                return;
+            }
+            if (action === 'join') {
+                await handleJoin(interaction, runId);
+                return;
+            }
+            if (action === 'start') {
+                await handleStatus(interaction, runId, 'started');
+                return;
+            }
+            if (action === 'end') {
+                await handleStatus(interaction, runId, 'ended');
+                return;
+            }
 
-            return btn.reply({ content: 'Coming soon.', ephemeral: true });
+            // fallback
+            await interaction.reply({ content: 'Unknown action.', flags: 1 << 6 });
         }
     } catch (e) {
         console.error(e);
-        if (interaction.isRepliable?.()) {
-            const msg = 'Something went wrong.';
+        if ('isRepliable' in interaction && interaction.isRepliable()) {
             interaction.deferred || interaction.replied
-                ? await interaction.followUp({ content: msg, ephemeral: true })
-                : await interaction.reply({ content: msg, ephemeral: true });
+                ? await interaction.followUp({ content: 'Something went wrong.', flags: 1 << 6 })
+                : await interaction.reply({ content: 'Something went wrong.', flags: 1 << 6 });
         }
     }
 });
+
 
 await client.login(token);

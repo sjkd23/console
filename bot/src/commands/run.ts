@@ -104,15 +104,22 @@ export const runCreate: SlashCommand = {
 
         let message = '@here'
         if (party) {
-            message += ` *Party:* **${party}**`;
+            message += ` Party: **${party}**`;
         } if (location) {
-            message += ` | *Location:* **${location}**`;
+            message += ` | Location: **${location}**`;
         }
         const sent = await channel.send({
             content: message,
             embeds: [embed],
             components: [row]
         });
+
+        // NEW: tell backend the message id we just posted
+        try {
+            await postJSON(`/runs/${runId}/message`, { postMessageId: sent.id });
+        } catch (e) {
+            console.error('Failed to store post_message_id:', e);
+        }
 
         await interaction.editReply(
             `Run created${sent ? ` and posted: ${sent.url}` : ''}`

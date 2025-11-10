@@ -3,30 +3,29 @@ import { postJSON } from '../../lib/http.js';
 
 function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
     const data = embed.toJSON();
-    const fields = (data.fields ?? []).map(f =>
-        f.name.toLowerCase() === 'raiders' ? { ...f, value: String(count) } : f
-    );
-    // if not present, add it
-    const hasRaiders = fields.some(f => f.name.toLowerCase() === 'raiders');
-    if (!hasRaiders) fields.push({ name: 'Raiders', value: String(count), inline: true });
+    const fields = [...(data.fields ?? [])];
 
-    const rebuilt = new EmbedBuilder(data).setFields(fields as any);
-    return rebuilt;
+    const idx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
+    if (idx >= 0) {
+        fields[idx] = { ...fields[idx], value: String(count) };
+    } else {
+        fields.push({ name: 'Raiders', value: String(count), inline: false });
+    }
+
+    return new EmbedBuilder(data).setFields(fields as any);
 }
 
 export async function handleJoin(btn: ButtonInteraction, runId: string) {
-    await btn.deferUpdate(); // acknowledge button; we’ll edit the message
+    // Acknowledge the button to prevent "interaction failed"
+    await btn.deferUpdate();
 
-    // Call backend to upsert reaction and get new count
     const { count } = await postJSON<{ count: number }>(`/runs/${runId}/reactions`, {
-        userId: btn.user.id,
-        state: 'join'
+        userId: btn.user.id
     });
 
     const msg = btn.message;
-    // Rebuild embeds with updated Raiders count (first embed only)
-    const embeds = msg.embeds;
-    if (!embeds?.length) return;
+    const embeds = msg.embeds ?? [];
+    if (!embeds.length) return;
 
     const first = EmbedBuilder.from(embeds[0]);
     const updated = setRaidersField(first, count);
