@@ -1,48 +1,50 @@
-export async function postJSON<T>(path: string, body: unknown): Promise<T> {
-    const base = process.env.BACKEND_URL!;
-    const key = process.env.BACKEND_API_KEY!;
-    const res = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            'x-api-key': key
-        },
-        body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`Backend ${res.status}: ${text || res.statusText}`);
-    }
-    return res.json() as Promise<T>;
+// bot/src/lib/http.ts
+import fetch from 'node-fetch';
+
+const BASE = process.env.BACKEND_URL!;
+const API_KEY = process.env.BACKEND_API_KEY!;
+
+function headers() {
+    return {
+        'content-type': 'application/json',
+        'x-api-key': API_KEY,
+    };
 }
 
-export async function patchJSON<T>(path: string, body: unknown): Promise<T> {
-    const base = process.env.BACKEND_URL!;
-    const res = await fetch(`${base}${path}`, {
-        method: 'PATCH',
-        headers: {
-            'content-type': 'application/json',
-            'x-api-key': process.env.BACKEND_API_KEY!,
-        },
-        body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Backend ${res.status}: ${text}`);
+export class BackendError extends Error {
+    code?: string;
+    status?: number;
+    constructor(message: string, code?: string, status?: number) {
+        super(message);
+        this.code = code;
+        this.status = status;
     }
-    return res.json() as Promise<T>;
+}
+
+async function handle(res: Response) {
+    const text = await res.text();
+    let data: any;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+
+    if (res.ok) return data;
+
+    // Expect unified error: { error: { code, message } }
+    const code = data?.error?.code ?? 'UNKNOWN';
+    const msg = data?.error?.message ?? `HTTP ${res.status}`;
+    throw new BackendError(msg, code, res.status);
 }
 
 export async function getJSON<T>(path: string): Promise<T> {
-    const base = process.env.BACKEND_URL!;
-    const res = await fetch(`${base}${path}`, {
-        method: 'GET',
-        headers: { 'x-api-key': process.env.BACKEND_API_KEY! }
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Backend ${res.status}: ${text}`);
-    }
-    return res.json() as Promise<T>;
+    const res = await fetch(`${BASE}${path}`, { method: 'GET', headers: headers() as any });
+    return handle(res) as Promise<T>;
 }
 
+export async function postJSON<T>(path: string, body: any): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: headers() as any, body: JSON.stringify(body) });
+    return handle(res) as Promise<T>;
+}
+
+export async function patchJSON<T>(path: string, body: any): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, { method: 'PATCH', headers: headers() as any, body: JSON.stringify(body) });
+    return handle(res) as Promise<T>;
+}

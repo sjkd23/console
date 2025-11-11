@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS run (
         dungeon_label TEXT NOT NULL,
         -- display name ("Fungal Cavern")
         description TEXT,
-        cap INTEGER,
         status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'started', 'ended', 'cancelled')),
         channel_id BIGINT,
         -- where the run embed lives

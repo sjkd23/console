@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-
+import { Errors } from '../lib/errors';
 declare module 'fastify' {
     interface FastifyRequest {
         apiKeyValid?: boolean;
@@ -20,7 +20,7 @@ export default fp(async (fastify) => {
         const headerKey = req.headers['x-api-key'];
         const expected = process.env.BACKEND_API_KEY;
         if (!expected || headerKey !== expected) {
-            return reply.code(401).send({ error: 'Unauthorized' });
+            return Errors.unauthorized(reply);
         }
         req.apiKeyValid = true;
     });

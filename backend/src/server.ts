@@ -8,7 +8,7 @@ const app = Fastify({ logger: true });
 
 await app.register(authPlugin);
 await app.register(healthRoutes, { prefix: '/v1' });
-await app.register(runsRoutes, { prefix: '/v1' }); // <-- this line is critical
+await app.register(runsRoutes, { prefix: '/v1' });
 
 const port = Number(process.env.PORT ?? 4000);
 app.listen({ port, host: '0.0.0.0' })

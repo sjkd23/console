@@ -16,5 +16,5 @@
   },
   "include": [
     "src"
-  ]
+, "../backend/src/lib/constants.ts", "../backend/src/lib/errors.ts"  ]
 }
