@@ -5,23 +5,12 @@ import {
     ButtonStyle,
     EmbedBuilder
 } from 'discord.js';
-import { extractFirstUserMentionId, isOrganizer } from '../../lib/permissions.js';
 
 export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string) {
-    // Figure out who the organizer is from the public embed (your layout puts it in description)
+    // No permission check here - backend will verify when buttons are clicked
+    // This allows the panel to be opened, but actions will be validated server-side
+
     const firstEmbed = btn.message.embeds?.[0];
-    const organizerFromEmbed = extractFirstUserMentionId(firstEmbed?.description ?? undefined);
-
-    // fetch guild member
-    const member = btn.guild
-        ? (btn.guild.members.cache.get(btn.user.id) ?? await btn.guild.members.fetch(btn.user.id).catch(() => null))
-        : null;
-
-    if (!isOrganizer(member, organizerFromEmbed)) {
-        await btn.reply({ content: 'Organizer only.', flags: 1 << 6 });
-        return;
-    }
-
     const dungeonTitle = firstEmbed?.title ?? 'Raid';
 
     const panelEmbed = new EmbedBuilder()
@@ -31,7 +20,8 @@ export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string
 
     const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`run:start:${runId}`).setLabel('Start').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`run:end:${runId}`).setLabel('End').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`run:end:${runId}`).setLabel('End').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`run:cancel:${runId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
 
     if (btn.deferred || btn.replied) {

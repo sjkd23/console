@@ -17,6 +17,9 @@ const CreateRun = z.object({
     channelId: zSnowflake,
     dungeonKey: z.string().trim().min(1).max(64),
     dungeonLabel: z.string().trim().min(1).max(100),
+    description: z.string().optional(),
+    party: z.string().optional(),
+    location: z.string().optional(),
 });
 
 export default async function runsRoutes(app: FastifyInstance) {
@@ -38,6 +41,9 @@ export default async function runsRoutes(app: FastifyInstance) {
             channelId,
             dungeonKey,
             dungeonLabel,
+            description,
+            party,
+            location,
         } = parsed.data;
 
         // Upsert guild & member snapshots
@@ -54,10 +60,10 @@ export default async function runsRoutes(app: FastifyInstance) {
 
         // Insert run (status=open)
         const res = await query<{ id: number }>(
-            `INSERT INTO run (guild_id, organizer_id, dungeon_key, dungeon_label, channel_id, status)
-        VALUES ($1::bigint, $2::bigint, $3, $4, $5::bigint, 'open')
+            `INSERT INTO run (guild_id, organizer_id, dungeon_key, dungeon_label, channel_id, status, description, party, location)
+        VALUES ($1::bigint, $2::bigint, $3, $4, $5::bigint, 'open', $6, $7, $8)
         RETURNING id`,
-            [guildId, organizerId, dungeonKey, dungeonLabel, channelId]
+            [guildId, organizerId, dungeonKey, dungeonLabel, channelId, description, party, location]
         );
 
         return reply.code(201).send({ runId: res.rows[0].id });
@@ -147,13 +153,18 @@ export default async function runsRoutes(app: FastifyInstance) {
     });
 
     /**
-     * PATCH /runs/:id
-     * Body: { status: 'started' | 'ended' }
-     * Allowed transitions: open->started, started->ended.
+     * PATCH /runs/:id/reactions
+     * Body: { userId: Snowflake, class: string }
+     * Updates the user's class selection for a run.
+     * Auto-joins the user if they haven't already.
+     * Returns { joinCount, classCounts: Record<string, number> }.
      */
-    app.patch('/runs/:id', async (req, reply) => {
+    app.patch('/runs/:id/reactions', async (req, reply) => {
         const Params = z.object({ id: z.string().regex(/^\d+$/) });
-        const Body = z.object({ status: z.enum(['started', 'ended']) });
+        const Body = z.object({
+            userId: zSnowflake,
+            class: z.string().trim().min(1).max(50),
+        });
 
         const p = Params.safeParse(req.params);
         const b = Body.safeParse(req.body);
@@ -161,15 +172,101 @@ export default async function runsRoutes(app: FastifyInstance) {
             return Errors.validation(reply);
         }
         const runId = Number(p.data.id);
-        const { status } = b.data;
+        const { userId, class: selectedClass } = b.data;
 
-        // Read current status
-        const cur = await query<{ status: string }>(
+        // Block edits for closed runs
+        const statusRes = await query<{ status: string }>(
             `SELECT status FROM run WHERE id = $1::bigint`,
+            [runId]
+        );
+        if (statusRes.rowCount === 0) {
+            return Errors.runNotFound(reply, runId);
+        }
+        const currentStatus = statusRes.rows[0].status;
+        if (currentStatus === 'ended' || currentStatus === 'cancelled') {
+            return Errors.runClosed(reply);
+        }
+
+        // Ensure member exists
+        await query(
+            `INSERT INTO member (id, username) VALUES ($1::bigint, NULL)
+        ON CONFLICT (id) DO NOTHING`,
+            [userId]
+        );
+
+        // Upsert reaction with class (default to 'join' if new)
+        await query(
+            `INSERT INTO reaction (run_id, user_id, state, class)
+        VALUES ($1::bigint, $2::bigint, 'join', $3)
+        ON CONFLICT (run_id, user_id)
+        DO UPDATE SET class = EXCLUDED.class, updated_at = now()`,
+            [runId, userId, selectedClass]
+        );
+
+        // Get join count
+        const joinRes = await query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count
+         FROM reaction
+        WHERE run_id = $1::bigint AND state = 'join'`,
+            [runId]
+        );
+
+        // Get class counts (only for joined users)
+        const classRes = await query<{ class: string | null; count: string }>(
+            `SELECT class, COUNT(*)::text AS count
+         FROM reaction
+        WHERE run_id = $1::bigint AND state = 'join' AND class IS NOT NULL
+        GROUP BY class`,
+            [runId]
+        );
+
+        const classCounts: Record<string, number> = {};
+        for (const row of classRes.rows) {
+            if (row.class) {
+                classCounts[row.class] = Number(row.count);
+            }
+        }
+
+        return reply.send({
+            joinCount: Number(joinRes.rows[0].count),
+            classCounts,
+        });
+    });
+
+    /**
+     * PATCH /runs/:id
+     * Body: { actorId: Snowflake, status: 'started' | 'ended' }
+     * Allowed transitions: open->started, started->ended.
+     * Authorization: actorId must match run.organizer_id.
+     */
+    app.patch('/runs/:id', async (req, reply) => {
+        const Params = z.object({ id: z.string().regex(/^\d+$/) });
+        const Body = z.object({
+            actorId: zSnowflake,
+            status: z.enum(['started', 'ended']),
+        });
+
+        const p = Params.safeParse(req.params);
+        const b = Body.safeParse(req.body);
+        if (!p.success || !b.success) {
+            return Errors.validation(reply);
+        }
+        const runId = Number(p.data.id);
+        const { actorId, status } = b.data;
+
+        // Read current status AND organizer_id
+        const cur = await query<{ status: string; organizer_id: string }>(
+            `SELECT status, organizer_id FROM run WHERE id = $1::bigint`,
             [runId]
         );
         if (cur.rowCount === 0) return Errors.runNotFound(reply, runId);
         const from = cur.rows[0].status;
+        const organizerId = cur.rows[0].organizer_id;
+
+        // Authorization: actor must be the organizer
+        if (actorId !== organizerId) {
+            return Errors.notOrganizer(reply);
+        }
 
         if (status === 'started') {
             // allow only open -> started
@@ -255,4 +352,81 @@ export default async function runsRoutes(app: FastifyInstance) {
             status: r.status,
         });
     });
+
+    /**
+     * GET /runs/:id/classes
+     * Get class counts for a run.
+     */
+    app.get('/runs/:id/classes', async (req, reply) => {
+        const Params = z.object({ id: z.string().regex(/^\d+$/) });
+        const p = Params.safeParse(req.params);
+        if (!p.success) return Errors.validation(reply);
+
+        const runId = Number(p.data.id);
+
+        // Get class counts (only for joined users)
+        const classRes = await query<{ class: string | null; count: string }>(
+            `SELECT class, COUNT(*)::text AS count
+         FROM reaction
+        WHERE run_id = $1::bigint AND state = 'join' AND class IS NOT NULL
+        GROUP BY class`,
+            [runId]
+        );
+
+        const classCounts: Record<string, number> = {};
+        for (const row of classRes.rows) {
+            if (row.class) {
+                classCounts[row.class] = Number(row.count);
+            }
+        }
+
+        return reply.send({ classCounts });
+    });
+
+    /**
+     * DELETE /runs/:id
+     * Body: { actorId: Snowflake }
+     * Cancels the run (sets status to 'cancelled').
+     * Authorization: actorId must match run.organizer_id.
+     */
+    app.delete('/runs/:id', async (req, reply) => {
+        const Params = z.object({ id: z.string().regex(/^\d+$/) });
+        const Body = z.object({ actorId: zSnowflake });
+
+        const p = Params.safeParse(req.params);
+        const b = Body.safeParse(req.body);
+        if (!p.success || !b.success) {
+            return Errors.validation(reply);
+        }
+        const runId = Number(p.data.id);
+        const { actorId } = b.data;
+
+        // Read current status AND organizer_id
+        const cur = await query<{ status: string; organizer_id: string }>(
+            `SELECT status, organizer_id FROM run WHERE id = $1::bigint`,
+            [runId]
+        );
+        if (cur.rowCount === 0) return Errors.runNotFound(reply, runId);
+        const currentStatus = cur.rows[0].status;
+        const organizerId = cur.rows[0].organizer_id;
+
+        // Authorization: actor must be the organizer
+        if (actorId !== organizerId) {
+            return Errors.notOrganizer(reply);
+        }
+
+        // Don't allow canceling already ended/cancelled runs
+        if (currentStatus === 'ended' || currentStatus === 'cancelled') {
+            return Errors.alreadyTerminal(reply);
+        }
+
+        // Set status to cancelled
+        await query(
+            `UPDATE run SET status = 'cancelled' WHERE id = $1::bigint`,
+            [runId]
+        );
+
+        return reply.send({ ok: true, status: 'cancelled' });
+    });
 }
+

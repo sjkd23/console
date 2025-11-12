@@ -1,32 +1,32 @@
 import { ButtonInteraction, ChannelType } from 'discord.js';
-import { getJSON, patchJSON } from '../../lib/http.js';
-import { extractFirstUserMentionId, isOrganizer } from '../../lib/permissions.js';
+import { getJSON, patchJSON, deleteJSON, BackendError } from '../../lib/http.js';
 
 export async function handleStatus(
     btn: ButtonInteraction,
     runId: string,
-    status: 'started' | 'ended'
+    status: 'started' | 'ended' | 'cancelled'
 ) {
-    // Gate: organizer only (we read Organizer mention from your embed description)
-    const firstEmbed = btn.message.embeds?.[0];
-    const organizerFromEmbed = extractFirstUserMentionId(firstEmbed?.description ?? undefined);
-
-    const member = btn.guild
-        ? (btn.guild.members.cache.get(btn.user.id) ??
-            (await btn.guild.members.fetch(btn.user.id).catch(() => null)))
-        : null;
-
-    if (!isOrganizer(member, organizerFromEmbed)) {
-        // ephemeral – use flags to avoid deprecation warning
-        await btn.reply({ content: 'Organizer only.', flags: 1 << 6 });
-        return;
-    }
-
     // For button interactions, use deferUpdate so we can edit the original ephemeral panel later.
     await btn.deferUpdate();
 
-    // 1) Update backend status (PATCH)
-    await patchJSON(`/runs/${runId}`, { status });
+    // 1) Update backend status (PATCH for started/ended, DELETE for cancelled) with actorId
+    //    Backend will verify that btn.user.id === run.organizer_id
+    try {
+        if (status === 'cancelled') {
+            await deleteJSON(`/runs/${runId}`, { actorId: btn.user.id });
+        } else {
+            await patchJSON(`/runs/${runId}`, { actorId: btn.user.id, status });
+        }
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await btn.editReply({ content: 'Only the organizer can perform this action.', components: [] });
+            return;
+        }
+        // Other errors
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await btn.editReply({ content: `Error: ${msg}`, components: [] });
+        return;
+    }
 
     // 2) Find the public run message (channelId + postMessageId from backend)
     const run = await getJSON<{ channelId: string | null; postMessageId: string | null }>(`/runs/${runId}`);
@@ -52,8 +52,7 @@ export async function handleStatus(
         // Keep embed & components as-is; optionally you could add a small content note.
         // Here we do nothing to the public message content/components.
         await btn.editReply({ content: 'Run started ✔️' });
-    } else {
-        // status === 'ended'
+    } else if (status === 'ended') {
         // Change PUBLIC MESSAGE content to "Ended" and remove buttons.
         // We don't touch embeds at all.
         await pubMsg.edit({ content: 'Ended', components: [] });
@@ -61,5 +60,12 @@ export async function handleStatus(
         // "Remove" the organizer panel by clearing its components and changing the text.
         // This updates the very ephemeral message holding the Start/End buttons.
         await btn.editReply({ content: 'Run ended — organizer panel closed.', components: [] });
+    } else {
+        // status === 'cancelled'
+        // Change PUBLIC MESSAGE content to "Cancelled" and remove buttons.
+        await pubMsg.edit({ content: 'Cancelled', components: [] });
+
+        // Close the organizer panel
+        await btn.editReply({ content: 'Run cancelled — organizer panel closed.', components: [] });
     }
 }

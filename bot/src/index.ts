@@ -14,6 +14,7 @@ import { commands } from './commands/index.js';
 import { handleOrganizerPanel } from './interactions/buttons/organizer-panel.js';
 import { handleJoin } from './interactions/buttons/join.js';
 import { handleStatus } from './interactions/buttons/run-status.js';
+import { handleClassSelection } from './interactions/buttons/class-selection.js';
 
 const token = process.env.SECRET_KEY!;
 const client = new Client({
@@ -52,12 +53,20 @@ client.on('interactionCreate', async (interaction) => {
                 await handleJoin(interaction, runId);
                 return;
             }
+            if (action === 'class') {
+                await handleClassSelection(interaction, runId);
+                return;
+            }
             if (action === 'start') {
                 await handleStatus(interaction, runId, 'started');
                 return;
             }
             if (action === 'end') {
                 await handleStatus(interaction, runId, 'ended');
+                return;
+            }
+            if (action === 'cancel') {
+                await handleStatus(interaction, runId, 'cancelled');
                 return;
             }
 

@@ -1,0 +1,17 @@
+# backend/Dockerfile.dev
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Speeds up installs
+ENV CI=true
+
+# Copy only package files first for better caching
+COPY package*.json ./
+
+# We'll run `npm ci` at container start to keep dev cycle simple
+# Copy the rest for typechecking/build tooling (volumes will override /app/src in dev)
+COPY tsconfig.json ./
+COPY src ./src
+
+EXPOSE 4000

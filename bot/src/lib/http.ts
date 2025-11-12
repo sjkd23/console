@@ -1,5 +1,4 @@
 // bot/src/lib/http.ts
-import fetch from 'node-fetch';
 
 const BASE = process.env.BACKEND_URL!;
 const API_KEY = process.env.BACKEND_API_KEY!;
@@ -35,16 +34,21 @@ async function handle(res: Response) {
 }
 
 export async function getJSON<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'GET', headers: headers() as any });
+    const res = await fetch(`${BASE}${path}`, { method: 'GET', headers: headers() });
     return handle(res) as Promise<T>;
 }
 
 export async function postJSON<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: headers() as any, body: JSON.stringify(body) });
+    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
     return handle(res) as Promise<T>;
 }
 
 export async function patchJSON<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'PATCH', headers: headers() as any, body: JSON.stringify(body) });
+    const res = await fetch(`${BASE}${path}`, { method: 'PATCH', headers: headers(), body: JSON.stringify(body) });
+    return handle(res) as Promise<T>;
+}
+
+export async function deleteJSON<T>(path: string, body: any): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: headers(), body: JSON.stringify(body) });
     return handle(res) as Promise<T>;
 }

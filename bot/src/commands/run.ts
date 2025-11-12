@@ -12,6 +12,7 @@ import {
 import type { SlashCommand } from './_types.js';
 import { postJSON } from '../lib/http.js';
 import { dungeonByCode, searchDungeons } from '../constants/dungeon-helpers.js';
+import { addRecentDungeon, getRecentDungeons } from '../lib/dungeon-cache.js';
 
 export const runCreate: SlashCommand = {
     data: new SlashCommandBuilder()
@@ -28,6 +29,9 @@ export const runCreate: SlashCommand = {
         )
         .addStringOption(o =>
             o.setName('location').setDescription('Location/server (optional)')
+        )
+        .addStringOption(o =>
+            o.setName('description').setDescription('Run description (optional)')
         ),
 
     // Slash action
@@ -43,11 +47,16 @@ export const runCreate: SlashCommand = {
             return;
         }
 
-        const desc = interaction.options.getString('desc') || undefined;
+        const desc = interaction.options.getString('description') || undefined;
         const party = interaction.options.getString('party') || undefined;
         const location = interaction.options.getString('location') || undefined;
 
         await interaction.deferReply({ ephemeral: true });
+
+        // Track this dungeon as recently used for this guild
+        if (interaction.guildId) {
+            addRecentDungeon(interaction.guildId, codeName);
+        }
 
         // Create DB run
         const { runId } = await postJSON<{ runId: number }>('/runs', {
@@ -58,19 +67,28 @@ export const runCreate: SlashCommand = {
             channelId: interaction.channelId!,
             dungeonKey: d.codeName,      // stable key in DB
             dungeonLabel: d.dungeonName, // human label in DB
-            description: desc
+            description: desc,
+            party,
+            location
         });
 
         // Build the public embed (new layout)
         const embed = new EmbedBuilder()
             .setTitle(`${d.dungeonName}`)
-            .setDescription(
-                desc ?? `Organizer: <@${interaction.user.id}>`
-            )
+            .setDescription(`Organizer: <@${interaction.user.id}>`)
             .addFields(
                 { name: 'Raiders', value: '0', inline: false }
             )
             .setTimestamp(new Date());
+
+        // Add Organizer Note field if description provided
+        if (desc) {
+            embed.addFields({
+                name: 'Organizer Note',
+                value: desc,
+                inline: false
+            });
+        }
 
         // Color & thumbnail if present
         if (d.dungeonColors?.length) embed.setColor(d.dungeonColors[0]);
@@ -134,10 +152,34 @@ export const runCreate: SlashCommand = {
             return;
         }
 
-        const results = searchDungeons(focused.value ?? '', 25).map(d => ({
-            name: d.dungeonName,   // visible
-            value: d.codeName      // sent back to command
-        }));
+        const query = (focused.value ?? '').trim();
+
+        let results;
+        if (!query && interaction.guildId) {
+            // Empty query: show recently used dungeons for this guild
+            const recentCodes = getRecentDungeons(interaction.guildId, 25);
+            results = recentCodes
+                .map(code => dungeonByCode[code])
+                .filter(d => d) // Filter out any undefined
+                .map(d => ({
+                    name: d.dungeonName,
+                    value: d.codeName
+                }));
+            
+            // If no recent dungeons, fall back to search behavior
+            if (results.length === 0) {
+                results = searchDungeons('', 25).map(d => ({
+                    name: d.dungeonName,
+                    value: d.codeName
+                }));
+            }
+        } else {
+            // Non-empty query: perform normal search
+            results = searchDungeons(query, 25).map(d => ({
+                name: d.dungeonName,
+                value: d.codeName
+            }));
+        }
 
         await interaction.respond(results);
     }

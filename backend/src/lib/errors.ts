@@ -12,7 +12,8 @@ export type ErrorCode =
     | 'RUN_NOT_FOUND'
     | 'INVALID_STATUS_TRANSITION'
     | 'ALREADY_TERMINAL'
-    | 'RUN_CLOSED';
+    | 'RUN_CLOSED'
+    | 'NOT_ORGANIZER';
 
 export interface ApiErrorPayload {
     error: {
@@ -82,4 +83,7 @@ export const Errors = {
 
     runClosed: (reply: FastifyReply) =>
         sendError(reply, 409, 'RUN_CLOSED', 'run is closed to new joins'),
+
+    notOrganizer: (reply: FastifyReply) =>
+        sendError(reply, 403, 'NOT_ORGANIZER', 'only the organizer can perform this action'),
 } as const;
