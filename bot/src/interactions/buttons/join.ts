@@ -1,4 +1,4 @@
-import { ButtonInteraction, EmbedBuilder } from 'discord.js';
+import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
 import { postJSON, getJSON } from '../../lib/http.js';
 
 function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
@@ -58,11 +58,12 @@ function updateClassField(embed: EmbedBuilder, classCounts: Record<string, numbe
 }
 
 export async function handleJoin(btn: ButtonInteraction, runId: string) {
-    // Acknowledge the button to prevent "interaction failed"
-    await btn.deferUpdate();
+    // Defer the reply so we can send a follow-up message
+    await btn.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const { count } = await postJSON<{ count: number }>(`/runs/${runId}/reactions`, {
-        userId: btn.user.id
+    const result = await postJSON<{ joinCount: number; benchCount: number }>(`/runs/${runId}/reactions`, {
+        userId: btn.user.id,
+        state: 'join'
     });
 
     // Fetch class counts to update the display
@@ -75,8 +76,13 @@ export async function handleJoin(btn: ButtonInteraction, runId: string) {
     if (!embeds.length) return;
 
     const first = EmbedBuilder.from(embeds[0]);
-    const updatedWithCount = setRaidersField(first, count);
+    const updatedWithCount = setRaidersField(first, result.joinCount);
     const updatedWithClasses = updateClassField(updatedWithCount, classRes.classCounts);
 
     await msg.edit({ embeds: [updatedWithClasses, ...embeds.slice(1)] });
+
+    // Send ephemeral confirmation message
+    await btn.editReply({
+        content: '✅ **You have joined the raid!**\n\nCheck above the raid panel for the **Party** and **Location** of the run!'
+    });
 }

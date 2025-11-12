@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import type { SlashCommand } from './_types.js';
 
 export const ping: SlashCommand = {
@@ -7,8 +7,8 @@ export const ping: SlashCommand = {
         .setDescription('Replies with pong and latency.'),
     async run(interaction: ChatInputCommandInteraction) {
         const sent = Date.now();
-        await interaction.reply({ content: 'Pong!', ephemeral: true });
+        await interaction.reply({ content: 'Pong!', flags: MessageFlags.Ephemeral });
         const latency = Date.now() - sent;
-        await interaction.followUp({ content: `Latency: ~${latency} ms`, ephemeral: true });
+        await interaction.followUp({ content: `Latency: ~${latency} ms`, flags: MessageFlags.Ephemeral });
     }
 };

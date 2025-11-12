@@ -4,7 +4,7 @@
  * If you change values here, mirror them in the bot.
  */
 
-export const RUN_STATUS = ['open', 'started', 'ended', 'cancelled'] as const;
+export const RUN_STATUS = ['open', 'live', 'ended'] as const;
 export type RunStatus = typeof RUN_STATUS[number];
 
 export const REACTION_STATES = ['join', 'bench', 'leave'] as const;

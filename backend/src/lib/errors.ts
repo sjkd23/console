@@ -13,7 +13,13 @@ export type ErrorCode =
     | 'INVALID_STATUS_TRANSITION'
     | 'ALREADY_TERMINAL'
     | 'RUN_CLOSED'
-    | 'NOT_ORGANIZER';
+    | 'RUN_NOT_LIVE'
+    | 'NOT_ORGANIZER'
+    | 'NOT_AUTHORIZED'
+    | 'NOT_SECURITY'
+    | 'IGN_ALREADY_IN_USE'
+    | 'PUNISHMENT_NOT_FOUND'
+    | 'INTERNAL_ERROR';
 
 export interface ApiErrorPayload {
     error: {
@@ -86,4 +92,16 @@ export const Errors = {
 
     notOrganizer: (reply: FastifyReply) =>
         sendError(reply, 403, 'NOT_ORGANIZER', 'only the organizer can perform this action'),
+
+    notAuthorized: (reply: FastifyReply, message?: string) =>
+        sendError(reply, 403, 'NOT_AUTHORIZED', message || 'You must have Discord Administrator permission or the configured administrator role to perform this action'),
+
+    notSecurity: (reply: FastifyReply) =>
+        sendError(reply, 403, 'NOT_SECURITY', 'only security role can perform this action'),
+
+    punishmentNotFound: (reply: FastifyReply) =>
+        sendError(reply, 404, 'PUNISHMENT_NOT_FOUND', 'punishment not found'),
+
+    internal: (reply: FastifyReply, message = 'an internal error occurred') =>
+        sendError(reply, 500, 'INTERNAL_ERROR', message),
 } as const;

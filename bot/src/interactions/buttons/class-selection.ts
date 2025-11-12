@@ -1,6 +1,7 @@
 import {
     ButtonInteraction,
     EmbedBuilder,
+    MessageFlags,
     StringSelectMenuBuilder,
     StringSelectMenuInteraction,
     ActionRowBuilder,
@@ -83,7 +84,7 @@ export async function handleClassSelection(btn: ButtonInteraction, runId: string
     await btn.reply({
         content: 'Select your class for this run:',
         components: [row],
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
     });
 
     // Wait for user to select

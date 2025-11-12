@@ -7,14 +7,17 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    MessageFlags,
     type GuildTextBasedChannel
 } from 'discord.js';
 import type { SlashCommand } from './_types.js';
+import { getMemberRoleIds } from '../lib/permissions.js';
 import { postJSON } from '../lib/http.js';
 import { dungeonByCode, searchDungeons } from '../constants/dungeon-helpers.js';
 import { addRecentDungeon, getRecentDungeons } from '../lib/dungeon-cache.js';
 
 export const runCreate: SlashCommand = {
+    requiredRole: 'organizer',
     data: new SlashCommandBuilder()
         .setName('run')
         .setDescription('Create a new run (posts to this channel).')
@@ -36,13 +39,32 @@ export const runCreate: SlashCommand = {
 
     // Slash action
     async run(interaction: ChatInputCommandInteraction): Promise<void> {
+        // Must be in a guild
+        if (!interaction.inGuild() || !interaction.guild) {
+            await interaction.reply({
+                content: 'This command can only be used in a server.',
+                flags: MessageFlags.Ephemeral
+            });
+            return;
+        }
+
+        // Fetch member for role IDs (permission check done by middleware)
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        if (!member) {
+            await interaction.reply({
+                content: 'Could not fetch your member information.',
+                flags: MessageFlags.Ephemeral
+            });
+            return;
+        }
+
         const codeName = interaction.options.getString('dungeon', true);
         const d = dungeonByCode[codeName];
 
         if (!d) {
             await interaction.reply({
                 content: 'Unknown dungeon name. Try again.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
             return;
         }
@@ -51,7 +73,7 @@ export const runCreate: SlashCommand = {
         const party = interaction.options.getString('party') || undefined;
         const location = interaction.options.getString('location') || undefined;
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         // Track this dungeon as recently used for this guild
         if (interaction.guildId) {
@@ -59,89 +81,119 @@ export const runCreate: SlashCommand = {
         }
 
         // Create DB run
-        const { runId } = await postJSON<{ runId: number }>('/runs', {
-            guildId: interaction.guildId!,
-            guildName: interaction.guild?.name ?? 'unknown',
-            organizerId: interaction.user.id,
-            organizerUsername: interaction.user.username,
-            channelId: interaction.channelId!,
-            dungeonKey: d.codeName,      // stable key in DB
-            dungeonLabel: d.dungeonName, // human label in DB
-            description: desc,
-            party,
-            location
-        });
-
-        // Build the public embed (new layout)
-        const embed = new EmbedBuilder()
-            .setTitle(`${d.dungeonName}`)
-            .setDescription(`Organizer: <@${interaction.user.id}>`)
-            .addFields(
-                { name: 'Raiders', value: '0', inline: false }
-            )
-            .setTimestamp(new Date());
-
-        // Add Organizer Note field if description provided
-        if (desc) {
-            embed.addFields({
-                name: 'Organizer Note',
-                value: desc,
-                inline: false
-            });
-        }
-
-        // Color & thumbnail if present
-        if (d.dungeonColors?.length) embed.setColor(d.dungeonColors[0]);
-        if (d.portalLink?.url) embed.setThumbnail(d.portalLink.url);
-
-        // Public buttons + organizer panel opener
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`run:join:${runId}`)
-                .setLabel('Join')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId(`run:class:${runId}`)
-                .setLabel('Class')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId(`run:org:${runId}`)
-                .setLabel('Organizer Panel')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        // Must be in a guild text channel to send a public message
-        if (!interaction.inGuild() || !interaction.channel) {
-            await interaction.editReply(
-                'This command can only be used in a server text channel.'
-            );
-            return;
-        }
-
-        const channel = interaction.channel as GuildTextBasedChannel;
-
-        let message = '@here'
-        if (party) {
-            message += ` Party: **${party}**`;
-        } if (location) {
-            message += ` | Location: **${location}**`;
-        }
-        const sent = await channel.send({
-            content: message,
-            embeds: [embed],
-            components: [row]
-        });
-
-        // NEW: tell backend the message id we just posted
         try {
-            await postJSON(`/runs/${runId}/message`, { postMessageId: sent.id });
-        } catch (e) {
-            console.error('Failed to store post_message_id:', e);
-        }
+            const { runId } = await postJSON<{ runId: number }>('/runs', {
+                guildId: interaction.guildId!,
+                guildName: interaction.guild?.name ?? 'unknown',
+                organizerId: interaction.user.id,
+                organizerUsername: interaction.user.username,
+                organizerRoles: getMemberRoleIds(member),
+                channelId: interaction.channelId!,
+                dungeonKey: d.codeName,      // stable key in DB
+                dungeonLabel: d.dungeonName, // human label in DB
+                description: desc,
+                party,
+                location,
+                autoEndMinutes: 120 // Auto-end runs after 2 hours
+            });
 
-        await interaction.editReply(
-            `Run created${sent ? ` and posted: ${sent.url}` : ''}`
-        );
+            // Build the public embed (Starting/Lobby phase)
+            const embed = new EmbedBuilder()
+                .setTitle(`⏳ Starting Soon: ${d.dungeonName}`)
+                .setDescription(`Organizer: <@${interaction.user.id}>\n\n**Status:** Waiting for organizer to start`)
+                .addFields(
+                    { name: 'Raiders', value: '0', inline: false }
+                )
+                .setTimestamp(new Date());
+
+            // Add Organizer Note field if description provided
+            if (desc) {
+                embed.addFields({
+                    name: 'Organizer Note',
+                    value: desc,
+                    inline: false
+                });
+            }
+
+            // Color & thumbnail if present
+            if (d.dungeonColors?.length) embed.setColor(d.dungeonColors[0]);
+            if (d.portalLink?.url) embed.setThumbnail(d.portalLink.url);
+
+            // Public buttons + organizer panel opener
+            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`run:join:${runId}`)
+                    .setLabel('Join')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId(`run:class:${runId}`)
+                    .setLabel('Class')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId(`run:org:${runId}`)
+                    .setLabel('Organizer Panel')
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            // Must be in a guild text channel to send a public message
+            if (!interaction.inGuild() || !interaction.channel) {
+                await interaction.editReply(
+                    'This command can only be used in a server text channel.'
+                );
+                return;
+            }
+
+            const channel = interaction.channel as GuildTextBasedChannel;
+
+            // Build message content with party/location if provided
+            let content = '@here';
+            if (party && location) {
+                content += ` Party: **${party}** | Location: **${location}**`;
+            } else if (party) {
+                content += ` Party: **${party}**`;
+            } else if (location) {
+                content += ` Location: **${location}**`;
+            }
+
+            const sent = await channel.send({
+                content,
+                embeds: [embed],
+                components: [row]
+            });
+
+            // NEW: tell backend the message id we just posted
+            try {
+                await postJSON(`/runs/${runId}/message`, { postMessageId: sent.id });
+            } catch (e) {
+                console.error('Failed to store post_message_id:', e);
+            }
+
+            await interaction.editReply(
+                `Run created${sent ? ` and posted: ${sent.url}` : ''}`
+            );
+        } catch (err) {
+            console.error('Failed to create run:', err);
+            
+            // Provide helpful error messages based on error type
+            let errorMessage = '❌ **Failed to create run**\n\n';
+            
+            if (err instanceof Error) {
+                if (err.message.includes('Organizer role') || err.message.includes('NOT_ORGANIZER')) {
+                    errorMessage += '**Issue:** You don\'t have the Organizer role configured for this server.\n\n';
+                    errorMessage += '**What to do:**\n';
+                    errorMessage += '• Ask a server admin to use `/setroles` to set up the Organizer role\n';
+                    errorMessage += '• Make sure you have the Discord role that\'s mapped to Organizer\n';
+                    errorMessage += '• Once roles are configured, try creating your run again';
+                } else {
+                    errorMessage += `**Error:** ${err.message}\n\n`;
+                    errorMessage += 'Please try again or contact an administrator if the problem persists.';
+                }
+            } else {
+                errorMessage += 'An unexpected error occurred. Please try again or contact an administrator.';
+            }
+            
+            await interaction.editReply(errorMessage);
+        }
     },
 
     // Autocomplete handler

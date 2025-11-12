@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
 import type { SlashCommand } from './_types.js';
 
 export const info: SlashCommand = {
@@ -14,6 +14,6 @@ export const info: SlashCommand = {
                 { name: 'Channel', value: `${interaction.channel?.toString()} (${interaction.channelId})`, inline: false }
             )
             .setTimestamp(new Date());
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 };
