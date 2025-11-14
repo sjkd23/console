@@ -9,7 +9,6 @@ import type { SlashCommand } from '../../_types.js';
 import { getJSON } from '../../../lib/utilities/http.js';
 import {
     canActorAddRole,
-    getRolesActorCanAdd,
     canBotManageRole,
     type RoleKey,
 } from '../../../lib/permissions/permissions.js';
@@ -17,9 +16,7 @@ import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /addrole - Add a role to a member (Officer+)
- * Officers can only add roles below their rank (organizer, security)
- * Head Organizers can add officer, organizer, security
- * Moderators+ can add any staff role
+ * Officers can only add organizer or security roles
  */
 export const addrole: SlashCommand = {
     requiredRole: 'officer',
@@ -39,11 +36,7 @@ export const addrole: SlashCommand = {
                 .setRequired(true)
                 .addChoices(
                     { name: 'Organizer', value: 'organizer' },
-                    { name: 'Security', value: 'security' },
-                    { name: 'Officer', value: 'officer' },
-                    { name: 'Head Organizer', value: 'head_organizer' },
-                    { name: 'Moderator', value: 'moderator' },
-                    { name: 'Administrator', value: 'administrator' }
+                    { name: 'Security', value: 'security' }
                 )
         )
         .setDMPermission(false),
@@ -87,14 +80,10 @@ export const addrole: SlashCommand = {
             // Check if actor can add this role
             const canAdd = await canActorAddRole(actor, roleKey);
             if (!canAdd) {
-                const allowedRoles = await getRolesActorCanAdd(actor);
                 await interaction.editReply(
                     '❌ **Permission Denied**\n\n' +
                     `You cannot add the **${roleKey}** role.\n\n` +
-                    `You can only add roles below your rank:\n` +
-                    (allowedRoles.length > 0 
-                        ? allowedRoles.map(r => `• ${r}`).join('\n')
-                        : '• None')
+                    `Officers can only add **Organizer** or **Security** roles.`
                 );
                 return;
             }
