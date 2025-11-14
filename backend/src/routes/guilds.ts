@@ -6,7 +6,7 @@ import { zSnowflake } from '../lib/constants.js';
 import { Errors } from '../lib/errors.js';
 import { canManageGuildRoles } from '../lib/authorization.js';
 import { logAudit } from '../lib/audit.js';
-import { ensureGuildExists, getGuildRoles, getGuildChannels } from '../lib/database-helpers.js';
+import { ensureGuildExists, ensureMemberExists, getGuildRoles, getGuildChannels } from '../lib/database-helpers.js';
 
 /**
  * Internal role keys (must match role_catalog entries)
@@ -152,6 +152,10 @@ export default async function guildsRoutes(app: FastifyInstance) {
         // Ensure guild exists
         await ensureGuildExists(guild_id);
 
+        // Ensure actor exists in member table before audit logging
+        // This prevents foreign key constraint violations
+        await ensureMemberExists(actor_user_id);
+
         const warnings: string[] = [];
         const updates: Record<string, string | null> = {};
 
@@ -272,6 +276,10 @@ export default async function guildsRoutes(app: FastifyInstance) {
 
         // Ensure guild exists
         await ensureGuildExists(guild_id);
+
+        // Ensure actor exists in member table before audit logging
+        // This prevents foreign key constraint violations
+        await ensureMemberExists(actor_user_id);
 
         const warnings: string[] = [];
         const updates: Record<string, string | null> = {};

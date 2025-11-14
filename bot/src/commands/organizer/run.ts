@@ -10,17 +10,17 @@ import {
     MessageFlags,
     type GuildTextBasedChannel
 } from 'discord.js';
-import type { SlashCommand } from './_types.js';
-import { getMemberRoleIds } from '../lib//permissions/permissions.js';
-import { postJSON } from '../lib/http.js';
-import { dungeonByCode } from '../constants/dungeon-helpers.js';
-import { addRecentDungeon } from '../lib/dungeon-cache.js';
-import { getReactionInfo } from '../constants/MappedAfkCheckReactions.js';
-import { ensureGuildContext, fetchGuildMember } from '../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../lib/error-handler.js';
-import { handleDungeonAutocomplete } from '../lib/dungeon-autocomplete.js';
-import { formatKeyLabel } from '../lib/key-emoji-helpers.js';
-import { logRaidCreation } from '../lib/raid-logger.js';
+import type { SlashCommand } from '../_types.js';
+import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
+import { postJSON, getGuildChannels } from '../../lib/http.js';
+import { dungeonByCode } from '../../constants/dungeon-helpers.js';
+import { addRecentDungeon } from '../../lib/dungeon-cache.js';
+import { getReactionInfo } from '../../constants/MappedAfkCheckReactions.js';
+import { ensureGuildContext, fetchGuildMember } from '../../lib/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/error-handler.js';
+import { handleDungeonAutocomplete } from '../../lib/dungeon-autocomplete.js';
+import { formatKeyLabel } from '../../lib/key-emoji-helpers.js';
+import { logRaidCreation } from '../../lib/raid-logger.js';
 
 export const runCreate: SlashCommand = {
     requiredRole: 'organizer',
@@ -78,7 +78,48 @@ export const runCreate: SlashCommand = {
         // Track this dungeon as recently used for this guild
         addRecentDungeon(guild.id, codeName);
 
-        // Create DB run
+        // Must be in a guild context
+        if (!interaction.inGuild()) {
+            await interaction.editReply(
+                'This command can only be used in a server.'
+            );
+            return;
+        }
+
+        // Get the configured raid channel
+        const { channels } = await getGuildChannels(guild.id);
+        const raidChannelId = channels.raid;
+
+        if (!raidChannelId) {
+            await interaction.editReply(
+                '**Error:** No raid channel configured.\n\n' +
+                'Please ask a server admin to use `/setchannels` to set up the raid channel first.'
+            );
+            return;
+        }
+
+        // Fetch the raid channel
+        let raidChannel: GuildTextBasedChannel;
+        try {
+            const fetchedChannel = await interaction.client.channels.fetch(raidChannelId);
+            if (!fetchedChannel || !fetchedChannel.isTextBased() || fetchedChannel.isDMBased()) {
+                await interaction.editReply(
+                    '**Error:** The configured raid channel is invalid or not a text channel.\n\n' +
+                    'Please ask a server admin to reconfigure it using `/setchannels`.'
+                );
+                return;
+            }
+            raidChannel = fetchedChannel as GuildTextBasedChannel;
+        } catch (err) {
+            console.error('Failed to fetch raid channel:', err);
+            await interaction.editReply(
+                '**Error:** Could not access the configured raid channel.\n\n' +
+                'It may have been deleted. Please ask a server admin to reconfigure it using `/setchannels`.'
+            );
+            return;
+        }
+
+        // Create DB run with the correct raid channel ID
         try {
             const { runId } = await postJSON<{ runId: number }>('/runs', {
                 guildId: guild.id,
@@ -86,7 +127,7 @@ export const runCreate: SlashCommand = {
                 organizerId: interaction.user.id,
                 organizerUsername: interaction.user.username,
                 organizerRoles: getMemberRoleIds(member),
-                channelId: interaction.channelId!,
+                channelId: raidChannelId, // Use the configured raid channel ID
                 dungeonKey: d.codeName,      // stable key in DB
                 dungeonLabel: d.dungeonName, // human label in DB
                 description: desc,
@@ -165,16 +206,6 @@ export const runCreate: SlashCommand = {
                 }
             }
 
-            // Must be in a guild text channel to send a public message
-            if (!interaction.inGuild() || !interaction.channel) {
-                await interaction.editReply(
-                    'This command can only be used in a server text channel.'
-                );
-                return;
-            }
-
-            const channel = interaction.channel as GuildTextBasedChannel;
-
             // Build message content with party/location if provided
             let content = '@here';
             if (party && location) {
@@ -185,7 +216,7 @@ export const runCreate: SlashCommand = {
                 content += ` Location: **${location}**`;
             }
 
-            const sent = await channel.send({
+            const sent = await raidChannel.send({
                 content,
                 embeds: [embed],
                 components: [row, ...keyRows]

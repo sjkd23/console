@@ -8,13 +8,13 @@ import {
     TimestampStyles,
     TextChannel,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
-import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../lib/http.js';
+import type { SlashCommand } from '../../_types.js';
+import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
+import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/http.js';
 
 /**
  * /suspend - Temporarily suspend a member from raid participation
- * Moderator-only command
+ * Security+ command
  * Assigns the 'suspended' role and removes it after the duration expires
  */
 export const suspend: SlashCommand = {
@@ -22,7 +22,7 @@ export const suspend: SlashCommand = {
     mutatesRoles: true,
     data: new SlashCommandBuilder()
         .setName('suspend')
-        .setDescription('Temporarily suspend a member from raids (Moderator only)')
+        .setDescription('Temporarily suspend a member from raids (Security+)')
         .addUserOption(option =>
             option
                 .setName('member')
@@ -417,10 +417,11 @@ export const suspend: SlashCommand = {
                 if (err instanceof BackendError) {
                     switch (err.code) {
                         case 'NOT_AUTHORIZED':
-                            errorMessage += '**Issue:** You don\'t have the Moderator role configured for this server.\n\n';
+                        case 'NOT_SECURITY':
+                            errorMessage += '**Issue:** You don\'t have the Security role configured for this server.\n\n';
                             errorMessage += '**What to do:**\n';
-                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Moderator role\n';
-                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Moderator';
+                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Security role\n';
+                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Security';
                             break;
                         case 'VALIDATION_ERROR':
                             errorMessage += `**Issue:** ${err.message}\n\n`;

@@ -6,16 +6,16 @@ import {
     MessageFlags,
     EmbedBuilder,
 } from 'discord.js';
-import type { SlashCommand } from './_types.js';
-import { getMemberRoleIds } from '../lib/permissions/permissions.js';
-import { postJSON } from '../lib/http.js';
-import { dungeonByCode } from '../constants/dungeon-helpers.js';
-import { addRecentDungeon } from '../lib/dungeon-cache.js';
-import { ensureGuildContext, fetchGuildMember } from '../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../lib/error-handler.js';
-import { handleDungeonAutocomplete } from '../lib/dungeon-autocomplete.js';
-import { formatPoints } from '../lib/format-helpers.js';
-import { logCommandExecution } from '../lib/bot-logger.js';
+import type { SlashCommand } from '../_types.js';
+import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
+import { postJSON } from '../../lib/http.js';
+import { dungeonByCode } from '../../constants/dungeon-helpers.js';
+import { addRecentDungeon } from '../../lib/dungeon-cache.js';
+import { ensureGuildContext, fetchGuildMember } from '../../lib/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/error-handler.js';
+import { handleDungeonAutocomplete } from '../../lib/dungeon-autocomplete.js';
+import { formatPoints } from '../../lib/format-helpers.js';
+import { logCommandExecution } from '../../lib/bot-logger.js';
 
 /**
  * /logkey - Manually log key pops for raiders.

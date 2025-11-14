@@ -7,6 +7,7 @@ import { zSnowflake } from '../lib/constants.js';
 import { Errors } from '../lib/errors.js';
 import { logAudit } from '../lib/audit.js';
 import { hasSecurity } from '../lib/permissions.js';
+import { ensureMemberExists } from '../lib/database-helpers.js';
 
 /**
  * Schema for creating a note
@@ -47,6 +48,11 @@ export default async function notesRoutes(app: FastifyInstance) {
         }
 
         try {
+            // Ensure actor and target exist in member table before creating note
+            // This prevents foreign key constraint violations in audit logging
+            await ensureMemberExists(actor_user_id);
+            await ensureMemberExists(user_id);
+
             // Generate a cryptographically secure random 24-character hex ID
             const noteId = randomBytes(12).toString('hex'); // 12 bytes = 24 hex characters
 

@@ -5,14 +5,16 @@ import { hasInternalRole } from './permissions.js';
 /**
  * Check if user can access organizer panel or manage runs.
  * Returns detailed result with user-friendly error messages.
+ * Now allows any user with organizer role to access, with a warning if not the original organizer.
  */
 export async function checkOrganizerAccess(
     interaction: ButtonInteraction,
     organizerId: string
-): Promise<{ allowed: boolean; errorMessage?: string }> {
+): Promise<{ allowed: boolean; isOriginalOrganizer: boolean; errorMessage?: string; warningMessage?: string }> {
     if (!interaction.guild) {
         return {
             allowed: false,
+            isOriginalOrganizer: false,
             errorMessage: 'This command can only be used in a server.'
         };
     }
@@ -22,18 +24,31 @@ export async function checkOrganizerAccess(
         const isRunOrganizer = interaction.user.id === organizerId;
         const hasOrganizerRole = await hasInternalRole(member, 'organizer');
 
-        if (!isRunOrganizer && !hasOrganizerRole) {
+        // Allow if user has organizer role
+        if (!hasOrganizerRole) {
             return {
                 allowed: false,
-                errorMessage: '❌ **Access Denied**\n\nOnly the run organizer or users with the **Organizer** role can access this panel.\n\n**What to do:**\n• Ask a server admin to use `/setroles` to configure the Organizer role\n• Make sure you have the Discord role that\'s mapped to Organizer'
+                isOriginalOrganizer: false,
+                errorMessage: '❌ **Access Denied**\n\nYou need the **Organizer** role to access this panel.\n\n**What to do:**\n• Ask a server admin to use `/setroles` to configure the Organizer role\n• Make sure you have the Discord role that\'s mapped to Organizer'
             };
         }
 
-        return { allowed: true };
+        // Generate warning if accessing someone else's panel
+        let warningMessage: string | undefined;
+        if (!isRunOrganizer) {
+            warningMessage = `⚠️ **Note:** You are managing a raid organized by <@${organizerId}>.\n\nYou have access because you have the Organizer role. Actions you take will be logged under your name.`;
+        }
+
+        return { 
+            allowed: true, 
+            isOriginalOrganizer: isRunOrganizer,
+            warningMessage 
+        };
     } catch (err) {
         console.error('[InteractionPermissions] Failed to check organizer access:', err);
         return {
             allowed: false,
+            isOriginalOrganizer: false,
             errorMessage: '❌ Failed to verify your permissions. Please try again.'
         };
     }

@@ -6,23 +6,23 @@ import {
     MessageFlags,
     EmbedBuilder,
 } from 'discord.js';
-import type { SlashCommand } from './_types.js';
-import { getMemberRoleIds } from '../lib/permissions/permissions.js';
-import { postJSON } from '../lib/http.js';
-import { dungeonByCode } from '../constants/dungeon-helpers.js';
-import { addRecentDungeon } from '../lib/dungeon-cache.js';
-import { updateQuotaPanelsForUser } from '../lib/quota-panel.js';
-import { ensureGuildContext, fetchGuildMember } from '../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../lib/error-handler.js';
-import { handleDungeonAutocomplete } from '../lib/dungeon-autocomplete.js';
-import { formatPoints } from '../lib/format-helpers.js';
-import { logCommandExecution } from '../lib/bot-logger.js';
+import type { SlashCommand } from '../_types.js';
+import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
+import { postJSON } from '../../lib/http.js';
+import { dungeonByCode } from '../../constants/dungeon-helpers.js';
+import { addRecentDungeon } from '../../lib/dungeon-cache.js';
+import { updateQuotaPanelsForUser } from '../../lib/quota-panel.js';
+import { ensureGuildContext, fetchGuildMember } from '../../lib/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/error-handler.js';
+import { handleDungeonAutocomplete } from '../../lib/dungeon-autocomplete.js';
+import { formatPoints } from '../../lib/format-helpers.js';
+import { logCommandExecution } from '../../lib/bot-logger.js';
 
 /**
  * /logrun - Manually log run completion quota for organizers.
  * Organizer-only command.
- * Supports logging multiple runs at once if an organizer completed multiple dungeons.
- * Idempotent: will not double-count the same run_id.
+ * This is a fully manual quota logging system that doesn't require an actual run to exist.
+ * Supports logging multiple runs at once and negative amounts to remove quota.
  */
 export const logrun: SlashCommand = {
     requiredRole: 'organizer',
@@ -32,7 +32,7 @@ export const logrun: SlashCommand = {
         .addStringOption(option =>
             option
                 .setName('dungeon')
-                .setDescription('Choose a dungeon to log')
+                .setDescription('Choose a dungeon type')
                 .setRequired(true)
                 .setAutocomplete(true)
         )
@@ -40,6 +40,12 @@ export const logrun: SlashCommand = {
             option
                 .setName('amount')
                 .setDescription('Number of runs to add/remove (negative to remove, default: 1)')
+                .setRequired(false)
+        )
+        .addUserOption(option =>
+            option
+                .setName('member')
+                .setDescription('Target organizer (defaults to yourself)')
                 .setRequired(false)
         ),
 
@@ -60,12 +66,23 @@ export const logrun: SlashCommand = {
         // Get options
         const dungeonCode = interaction.options.getString('dungeon', true);
         const amount = interaction.options.getInteger('amount') ?? 1;
+        const targetUser = interaction.options.getUser('member') ?? interaction.user;
 
         // Validate dungeon
         const dungeon = dungeonByCode[dungeonCode];
         if (!dungeon) {
             await interaction.reply({
                 content: '❌ Invalid dungeon selected. Please try again.',
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
+        }
+
+        // Fetch target member to ensure they exist in the guild
+        const targetMember = await fetchGuildMember(guild, targetUser.id);
+        if (!targetMember) {
+            await interaction.reply({
+                content: `❌ Could not find member ${targetUser.toString()} in this server.`,
                 flags: MessageFlags.Ephemeral,
             });
             return;
@@ -84,26 +101,18 @@ export const logrun: SlashCommand = {
             // Call backend to log run quota (pass dungeonKey to find most recent run)
             const result = await postJSON<{
                 logged: number;
-                already_logged: boolean;
                 total_points: number;
                 organizer_id: string;
             }>('/quota/log-run', {
                 actorId: interaction.user.id,
                 actorRoles,
                 guildId: guild.id,
-                dungeonKey: dungeonCode, // Backend will find most recent run
+                organizerId: targetUser.id, // Log quota for the target user
+                dungeonKey: dungeonCode, // Dungeon type for manual quota logging
                 amount,
             });
 
             // Build success embed
-            if (result.already_logged) {
-                // Run was already logged (shouldn't happen anymore, but keep for safety)
-                await interaction.editReply({
-                    content: `⚠️ **Already Logged**\n\nYour most recent **${dungeon.dungeonName}** run has already been logged for quota.\n\nNo points were added to prevent double-counting.`,
-                });
-                return;
-            }
-
             const isRemoving = amount < 0;
             const actionText = isRemoving ? 'Removed' : 'Logged';
             const embedTitle = isRemoving ? '➖ Run Quota Removed' : '✅ Run Quota Logged';
@@ -115,15 +124,11 @@ export const logrun: SlashCommand = {
                 .addFields(
                     { name: 'Dungeon', value: dungeon.dungeonName, inline: true },
                     { name: `Runs ${actionText}`, value: `${Math.abs(amount)}`, inline: true },
-                    { name: 'Points Changed', value: `${result.total_points > 0 ? '+' : ''}${formatPoints(result.total_points)}`, inline: true },
+                    { name: 'Points Changed', value: `${result.total_points >= 0 ? '+' : ''}${formatPoints(result.total_points)}`, inline: true },
                     { name: 'Organizer', value: `<@${result.organizer_id}>`, inline: true },
                     { name: `${actionText} By`, value: `<@${interaction.user.id}>`, inline: true },
                 )
                 .setTimestamp();
-
-            if (Math.abs(amount) > 1) {
-                embed.setFooter({ text: `${actionText} ${result.logged} run completion(s)` });
-            }
 
             await interaction.editReply({
                 embeds: [embed],
@@ -156,9 +161,6 @@ export const logrun: SlashCommand = {
             const errorMessage = formatErrorMessage({
                 error: err,
                 baseMessage: 'Failed to log run quota',
-                errorHandlers: {
-                    'RUN_NOT_FOUND': `**Issue:** The selected **${dungeon.dungeonName}** run was not found.\n\n**What to do:**\n• Try selecting a different dungeon\n• Create a new run with \`/run\` first`,
-                },
             });
             await interaction.editReply(errorMessage);
             await logCommandExecution(interaction.client, interaction, {

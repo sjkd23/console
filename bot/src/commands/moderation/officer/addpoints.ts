@@ -1,4 +1,4 @@
-// bot/src/commands/moderation/addquotapoints.ts
+// bot/src/commands/moderation/addpoints.ts
 import {
     SlashCommandBuilder,
     ChatInputCommandInteraction,
@@ -6,23 +6,23 @@ import {
     EmbedBuilder,
     PermissionFlagsBits,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { adjustQuotaPoints } from '../../lib/http.js';
-import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../../lib/error-handler.js';
-import { logCommandExecution, logQuotaAction } from '../../lib/bot-logger.js';
+import type { SlashCommand } from '../../_types.js';
+import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { adjustPoints } from '../../../lib/http.js';
+import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/interaction-helpers.js';
+import { formatErrorMessage } from '../../../lib/error-handler.js';
+import { logCommandExecution } from '../../../lib/bot-logger.js';
 
 /**
- * /addquotapoints - Manually adjust quota points for a member.
+ * /addpoints - Manually adjust regular (raider) points for a member.
  * Officer+ command (requires Officer role or higher).
  * Supports negative values to deduct points.
  */
-export const addquotapoints: SlashCommand = {
+export const addpoints: SlashCommand = {
     requiredRole: 'officer',
     data: new SlashCommandBuilder()
-        .setName('addquotapoints')
-        .setDescription('Manually adjust quota points for a member (Officer+)')
+        .setName('addpoints')
+        .setDescription('Manually adjust raider points for a member (Officer+)')
         .addIntegerOption(option =>
             option
                 .setName('amount')
@@ -70,8 +70,8 @@ export const addquotapoints: SlashCommand = {
             
             const actorRoles = getMemberRoleIds(invokerMember);
             
-            // Call backend to adjust quota points
-            const result = await adjustQuotaPoints(
+            // Call backend to adjust points
+            const result = await adjustPoints(
                 guild.id,
                 targetUser.id,
                 {
@@ -86,7 +86,7 @@ export const addquotapoints: SlashCommand = {
             const actionEmoji = amount > 0 ? '➕' : '➖';
             
             const embed = new EmbedBuilder()
-                .setTitle(`${actionEmoji} Quota Points ${actionText}`)
+                .setTitle(`${actionEmoji} Raider Points ${actionText}`)
                 .setColor(amount > 0 ? 0x00ff00 : 0xff9900)
                 .addFields(
                     { name: 'Member', value: `<@${targetUser.id}>`, inline: true },
@@ -101,24 +101,23 @@ export const addquotapoints: SlashCommand = {
             });
 
             // Log to bot-log
-            await logQuotaAction(
-                interaction.client,
-                guild.id,
-                'Manual Adjustment',
-                interaction.user.id,
-                targetUser.id,
-                amount
-            );
-            await logCommandExecution(interaction.client, interaction, { success: true });
+            await logCommandExecution(interaction.client, interaction, {
+                success: true,
+                details: {
+                    'Target': `<@${targetUser.id}>`,
+                    'Amount': `${amount > 0 ? '+' : ''}${amount}`,
+                    'New Total': `${result.new_total}`
+                }
+            });
         } catch (err) {
             const errorMessage = formatErrorMessage({
                 error: err,
-                baseMessage: 'Failed to adjust quota points',
+                baseMessage: 'Failed to adjust raider points',
             });
             await interaction.editReply(errorMessage);
             await logCommandExecution(interaction.client, interaction, {
                 success: false,
-                errorMessage: 'Failed to adjust quota points'
+                errorMessage: 'Failed to adjust raider points'
             });
         }
     },

@@ -1,30 +1,30 @@
 import { REST, Routes } from 'discord.js';
 import type { SlashCommand } from './_types.js';
 import { withPermissionCheck } from '../lib/permissions/command-middleware.js';
-import { runCreate } from './run.js';
-import { verify } from './moderation/verify.js';
+import { runCreate } from './organizer/run.js';
+import { verify } from './moderation/security/verify.js';
 import { setroles } from './conifgs/setroles.js';
 import { setchannels } from './conifgs/setchannels.js';
-import { editname } from './moderation/editname.js';
-import { unverify } from './moderation/unverify.js';
-import { warn } from './moderation/warn.js';
-import { suspend } from './moderation/suspend.js';
-import { unsuspend } from './moderation/unsuspend.js';
-import { removepunishment } from './moderation/removepunishment.js';
-import { checkpunishments } from './moderation/checkpunishments.js';
-import { addnote } from './moderation/addnote.js';
-import { logrun } from './logrun.js';
-import { logkey } from './logkey.js';
+import { editname } from './moderation/security/editname.js';
+import { unverify } from './moderation/security/unverify.js';
+import { warn } from './moderation/security/warn.js';
+import { suspend } from './moderation/security/suspend.js';
+import { unsuspend } from './moderation/security/unsuspend.js';
+import { removepunishment } from './moderation/officer/removepunishment.js';
+import { checkpunishments } from './moderation/security/checkpunishments.js';
+import { addnote } from './moderation/security/addnote.js';
+import { logrun } from './organizer/logrun.js';
+import { logkey } from './organizer/logkey.js';
 import { stats } from './stats.js';
-import { syncteam } from './syncteam.js';
+import { syncteam } from './moderation/moderator/syncteam.js';
 import { configquota } from './conifgs/configquota.js';
 import { configpoints } from './conifgs/configpoints.js';
 import { configverification } from './conifgs/configverification.js';
 import { help } from './help.js';
 import { ping } from './ping.js';
-import { addquotapoints } from './moderation/addquotapoints.js';
-import { addpoints } from './moderation/addpoints.js';
-import { headcount } from './headcount.js';
+import { addquotapoints } from './moderation/officer/addquotapoints.js';
+import { addpoints } from './moderation/officer/addpoints.js';
+import { headcount } from './organizer/headcount.js';
 
 // Apply permission middleware to all commands
 export const commands: SlashCommand[] = [

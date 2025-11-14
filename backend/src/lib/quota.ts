@@ -551,7 +551,14 @@ export async function logQuotaEvent(
         }
 
         logger.info({ guildId, actorUserId, actionType, subjectId, dungeonKey, quotaPoints: effectiveQuotaPoints }, 'Logged quota event');
-        return res.rows[0];
+        
+        // Convert DB numeric fields to numbers (PostgreSQL returns them as strings)
+        const row = res.rows[0];
+        return {
+            id: Number(row.id),
+            points: Number(row.points),
+            quota_points: Number(row.quota_points)
+        };
     } catch (err) {
         logger.error({ err, guildId, actorUserId, actionType }, 'Failed to log quota event');
         throw err;

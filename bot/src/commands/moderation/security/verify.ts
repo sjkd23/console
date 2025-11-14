@@ -8,10 +8,10 @@ import {
     TimestampStyles,
     TextChannel,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
-import { verifyRaider, BackendError, getGuildChannels, getRaider, getGuildRoles } from '../../lib/http.js';
-import { logCommandExecution, logVerificationAction } from '../../lib/bot-logger.js';
+import type { SlashCommand } from '../../_types.js';
+import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
+import { verifyRaider, BackendError, getGuildChannels, getRaider, getGuildRoles } from '../../../lib/http.js';
+import { logCommandExecution, logVerificationAction } from '../../../lib/bot-logger.js';
 
 /**
  * /verify - Manually verify a Discord member with their ROTMG IGN.

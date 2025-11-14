@@ -14,7 +14,7 @@ import {
     ButtonInteraction
 } from 'discord.js';
 import { commands } from './commands/index.js';
-import { handleOrganizerPanel } from './interactions/buttons/raids/organizer-panel.js';
+import { handleOrganizerPanel, handleOrganizerPanelConfirm, handleOrganizerPanelDeny } from './interactions/buttons/raids/organizer-panel.js';
 import { handleJoin } from './interactions/buttons/raids/join.js';
 import { handleStatus } from './interactions/buttons/raids/run-status.js';
 import { handleClassSelection } from './interactions/buttons/raids/class-selection.js';
@@ -23,7 +23,7 @@ import { handleSetParty, handleSetLocation } from './interactions/buttons/raids/
 import { handleKeyReaction } from './interactions/buttons/raids/key-reaction.js';
 import { handleHeadcountJoin } from './interactions/buttons/raids/headcount-join.js';
 import { handleHeadcountKey } from './interactions/buttons/raids/headcount-key.js';
-import { handleHeadcountOrganizerPanel } from './interactions/buttons/raids/headcount-organizer-panel.js';
+import { handleHeadcountOrganizerPanel, handleHeadcountOrganizerPanelConfirm, handleHeadcountOrganizerPanelDeny } from './interactions/buttons/raids/headcount-organizer-panel.js';
 import { handleHeadcountEnd } from './interactions/buttons/raids/headcount-end.js';
 import { handleHeadcountConvert } from './interactions/buttons/raids/headcount-convert.js';
 import { 
@@ -59,8 +59,7 @@ import {
     handleVerificationDeny,
     handleVerificationApproveModal,
 } from './interactions/buttons/verification/approve-deny.js';
-import { startSuspensionCleanup } from './lib/suspension-cleanup.js';
-import { startRunAutoEnd } from './lib/run-auto-end.js';
+import { startScheduledTasks } from './lib/scheduled-tasks.js';
 import { syncTeamRoleForMember } from './lib/team-role-manager.js';
 import { logCommandExecution, createSuccessResult, createErrorResult } from './lib/command-logging.js';
 import { BackendError } from './lib/http.js';
@@ -79,11 +78,8 @@ const client = new Client({
 client.once(Events.ClientReady, () => {
     console.log(`Logged in as ${client.user?.tag}`);
     
-    // Start automatic suspension cleanup task
-    startSuspensionCleanup(client);
-    
-    // Start automatic run auto-end task
-    startRunAutoEnd(client);
+    // Start all scheduled maintenance tasks (runs, suspensions, verification cleanup, etc.)
+    startScheduledTasks(client);
 });
 
 // Listen for role changes on guild members
@@ -238,7 +234,20 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             if (interaction.customId.startsWith('headcount:org:')) {
-                const panelTimestamp = interaction.customId.split(':')[2];
+                const parts = interaction.customId.split(':');
+                const action = parts[2]; // 'confirm', 'deny', or panelTimestamp
+                const identifier = parts[3]; // publicMessageId if confirm/deny
+                
+                if (action === 'confirm' && identifier) {
+                    await handleHeadcountOrganizerPanelConfirm(interaction, identifier);
+                    return;
+                }
+                if (action === 'deny' && identifier) {
+                    await handleHeadcountOrganizerPanelDeny(interaction, identifier);
+                    return;
+                }
+                // Regular headcount organizer panel access
+                const panelTimestamp = action; // The timestamp is in the action position
                 await handleHeadcountOrganizerPanel(interaction, panelTimestamp);
                 return;
             }
@@ -258,6 +267,16 @@ client.on('interactionCreate', async (interaction) => {
             if (ns !== 'run' || !runId) return;
 
             if (action === 'org' || action === 'panel') {
+                // Check if this is a confirmation action
+                if (runId === 'confirm' && rest.length > 0) {
+                    await handleOrganizerPanelConfirm(interaction, rest.join(':'));
+                    return;
+                }
+                if (runId === 'deny' && rest.length > 0) {
+                    await handleOrganizerPanelDeny(interaction, rest.join(':'));
+                    return;
+                }
+                // Regular organizer panel access
                 await handleOrganizerPanel(interaction, runId);
                 return;
             }

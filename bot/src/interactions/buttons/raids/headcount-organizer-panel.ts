@@ -11,54 +11,26 @@ import {
     EmbedBuilder,
     MessageFlags,
     StringSelectMenuBuilder,
-    ComponentType
+    ComponentType,
+    Message
 } from 'discord.js';
 import { getParticipants, getOrganizerId } from '../../../lib/headcount-state.js';
 import { getKeyOffers } from './headcount-key.js';
 import { dungeonByCode } from '../../../constants/dungeon-helpers.js';
 import { getDungeonKeyEmoji } from '../../../lib/key-emoji-helpers.js';
+import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
-export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, panelTimestamp: string) {
-    // btn.message is the PUBLIC headcount panel message
-    const publicMsg = btn.message;
-    const embeds = publicMsg.embeds ?? [];
-    
-    if (!embeds.length) {
-        await btn.reply({
-            content: 'Could not fetch headcount panel details.',
-            flags: MessageFlags.Ephemeral
-        });
-        return;
-    }
-
-    const embed = EmbedBuilder.from(embeds[0]);
-    const organizerId = getOrganizerId(embed);
-
-    // Authorization check - only organizer can access
-    if (!organizerId || organizerId !== btn.user.id) {
-        await btn.reply({
-            content: '❌ Only the headcount organizer can access this panel.',
-            flags: MessageFlags.Ephemeral
-        });
-        return;
-    }
-
-    // Extract dungeon codes from the button components
-    const dungeonCodes: string[] = [];
-    for (const row of publicMsg.components) {
-        if ('components' in row) {
-            for (const component of row.components) {
-                if ('customId' in component && component.customId?.startsWith('headcount:key:')) {
-                    const parts = component.customId.split(':');
-                    const dungeonCode = parts[3];
-                    if (dungeonCode && !dungeonCodes.includes(dungeonCode)) {
-                        dungeonCodes.push(dungeonCode);
-                    }
-                }
-            }
-        }
-    }
-
+/**
+ * Internal function to build and show the headcount organizer panel.
+ * Used by both initial access and confirmed access.
+ */
+async function showHeadcountPanel(
+    btn: ButtonInteraction, 
+    publicMsg: Message,
+    embed: EmbedBuilder,
+    organizerId: string,
+    dungeonCodes: string[]
+) {
     // Get headcount state
     const participants = getParticipants(embed);
     const keyOffers = getKeyOffers(publicMsg.id);
@@ -82,7 +54,6 @@ export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, pane
     if (dungeonCodes.length === 0) {
         description += '_No dungeons found_';
     } else {
-        let hasKeys = false;
         for (const dungeonCode of dungeonCodes) {
             const dungeon = dungeonByCode[dungeonCode];
             const dungeonName = dungeon?.dungeonName || dungeonCode;
@@ -93,7 +64,6 @@ export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, pane
             const keyEmoji = getDungeonKeyEmoji(dungeonCode);
 
             if (count > 0) {
-                hasKeys = true;
                 const mentions = Array.from(userIds!).map(id => `<@${id}>`).join(', ');
                 description += `\n${keyEmoji} **${dungeonName}** (${count}): ${mentions}`;
             } else {
@@ -119,9 +89,182 @@ export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, pane
             .setDisabled(dungeonCodes.length === 0)
     );
 
-    await btn.reply({
-        embeds: [panelEmbed],
-        components: [row1],
-        flags: MessageFlags.Ephemeral
+    if (btn.deferred || btn.replied) {
+        await btn.editReply({
+            embeds: [panelEmbed],
+            components: [row1]
+        });
+    } else {
+        await btn.reply({
+            embeds: [panelEmbed],
+            components: [row1],
+            flags: MessageFlags.Ephemeral
+        });
+    }
+}
+
+export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, panelTimestamp: string) {
+    // btn.message is the PUBLIC headcount panel message
+    const publicMsg = btn.message;
+    const embeds = publicMsg.embeds ?? [];
+    
+    if (!embeds.length) {
+        await btn.reply({
+            content: 'Could not fetch headcount panel details.',
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    const embed = EmbedBuilder.from(embeds[0]);
+    const organizerId = getOrganizerId(embed);
+
+    if (!organizerId) {
+        await btn.reply({
+            content: 'Could not determine the headcount organizer.',
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // Authorization check using centralized helper
+    const accessCheck = await checkOrganizerAccess(btn, organizerId);
+    if (!accessCheck.allowed) {
+        await btn.reply({
+            content: accessCheck.errorMessage,
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // If not the original organizer, show confirmation panel first
+    if (!accessCheck.isOriginalOrganizer) {
+        const confirmEmbed = new EmbedBuilder()
+            .setTitle('⚠️ Confirmation Required')
+            .setDescription(
+                `This headcount is being hosted by <@${organizerId}>.\n\n` +
+                `Are you sure you want to manage it?\n\n` +
+                `**Note:** Your actions will be logged under your name.`
+            )
+            .setColor(0xffa500) // Orange color
+            .setTimestamp(new Date());
+
+        const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`headcount:org:confirm:${publicMsg.id}`)
+                .setLabel('Confirm')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`headcount:org:deny:${publicMsg.id}`)
+                .setLabel('Deny')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await btn.reply({
+            embeds: [confirmEmbed],
+            components: [confirmRow],
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // Extract dungeon codes from the button components
+    const dungeonCodes: string[] = [];
+    for (const row of publicMsg.components) {
+        if ('components' in row) {
+            for (const component of row.components) {
+                if ('customId' in component && component.customId?.startsWith('headcount:key:')) {
+                    const parts = component.customId.split(':');
+                    const dungeonCode = parts[3];
+                    if (dungeonCode && !dungeonCodes.includes(dungeonCode)) {
+                        dungeonCodes.push(dungeonCode);
+                    }
+                }
+            }
+        }
+    }
+
+    // Original organizer - show panel directly
+    await showHeadcountPanel(btn, publicMsg, embed, organizerId, dungeonCodes);
+}
+
+/**
+ * Handle confirmation when a different organizer wants to manage a headcount.
+ */
+export async function handleHeadcountOrganizerPanelConfirm(btn: ButtonInteraction, publicMessageId: string) {
+    await btn.deferUpdate();
+
+    // Fetch the public headcount message
+    const publicMsg = await btn.channel?.messages.fetch(publicMessageId).catch(() => null);
+    if (!publicMsg) {
+        await btn.editReply({
+            content: 'Could not find headcount panel message.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    const embeds = publicMsg.embeds ?? [];
+    if (!embeds.length) {
+        await btn.editReply({
+            content: 'Could not find headcount panel.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    const embed = EmbedBuilder.from(embeds[0]);
+    const organizerId = getOrganizerId(embed);
+
+    if (!organizerId) {
+        await btn.editReply({
+            content: 'Could not determine the headcount organizer.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Verify they still have organizer access
+    const accessCheck = await checkOrganizerAccess(btn, organizerId);
+    if (!accessCheck.allowed) {
+        await btn.editReply({
+            content: accessCheck.errorMessage,
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Extract dungeon codes from the button components
+    const dungeonCodes: string[] = [];
+    for (const row of publicMsg.components) {
+        if ('components' in row) {
+            for (const component of row.components) {
+                if ('customId' in component && component.customId?.startsWith('headcount:key:')) {
+                    const parts = component.customId.split(':');
+                    const dungeonCode = parts[3];
+                    if (dungeonCode && !dungeonCodes.includes(dungeonCode)) {
+                        dungeonCodes.push(dungeonCode);
+                    }
+                }
+            }
+        }
+    }
+
+    // Show the full headcount panel
+    await showHeadcountPanel(btn, publicMsg, embed, organizerId, dungeonCodes);
+}
+
+/**
+ * Handle denial when a different organizer decides not to manage a headcount.
+ */
+export async function handleHeadcountOrganizerPanelDeny(btn: ButtonInteraction, publicMessageId: string) {
+    await btn.update({
+        content: 'Access denied. You can reopen the organizer panel at any time.',
+        embeds: [],
+        components: []
     });
 }

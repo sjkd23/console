@@ -12,13 +12,14 @@ import {
     type GuildTextBasedChannel,
     ComponentType
 } from 'discord.js';
-import type { SlashCommand } from './_types.js';
-import { ensureGuildContext } from '../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../lib/error-handler.js';
-import { dungeonByCode, searchDungeons } from '../constants/dungeon-helpers.js';
-import type { DungeonInfo } from '../constants/dungeon-types.js';
-import { getDungeonKeyEmojiIdentifier } from '../lib/key-emoji-helpers.js';
-import { logRaidCreation } from '../lib/raid-logger.js';
+import type { SlashCommand } from '../_types.js';
+import { ensureGuildContext } from '../../lib/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/error-handler.js';
+import { dungeonByCode, searchDungeons } from '../../constants/dungeon-helpers.js';
+import type { DungeonInfo } from '../../constants/dungeon-types.js';
+import { getDungeonKeyEmojiIdentifier } from '../../lib/key-emoji-helpers.js';
+import { logRaidCreation } from '../../lib/raid-logger.js';
+import { getGuildChannels } from '../../lib/http.js';
 
 export const headcount: SlashCommand = {
     requiredRole: 'organizer',
@@ -137,9 +138,44 @@ export const headcount: SlashCommand = {
                 keyButtonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...rowButtons));
             }
 
-            // Post headcount panel to channel
-            const channel = interaction.channel as GuildTextBasedChannel;
-            const sent = await channel.send({
+            // Get the configured raid channel
+            const { channels } = await getGuildChannels(guild.id);
+            const raidChannelId = channels.raid;
+
+            if (!raidChannelId) {
+                await interaction.editReply({
+                    content: '**Error:** No raid channel configured.\n\n' +
+                        'Please ask a server admin to use `/setchannels` to set up the raid channel first.',
+                    components: []
+                });
+                return;
+            }
+
+            // Fetch the raid channel
+            let raidChannel: GuildTextBasedChannel;
+            try {
+                const fetchedChannel = await interaction.client.channels.fetch(raidChannelId);
+                if (!fetchedChannel || !fetchedChannel.isTextBased() || fetchedChannel.isDMBased()) {
+                    await interaction.editReply({
+                        content: '**Error:** The configured raid channel is invalid or not a text channel.\n\n' +
+                            'Please ask a server admin to reconfigure it using `/setchannels`.',
+                        components: []
+                    });
+                    return;
+                }
+                raidChannel = fetchedChannel as GuildTextBasedChannel;
+            } catch (err) {
+                console.error('Failed to fetch raid channel:', err);
+                await interaction.editReply({
+                    content: '**Error:** Could not access the configured raid channel.\n\n' +
+                        'It may have been deleted. Please ask a server admin to reconfigure it using `/setchannels`.',
+                    components: []
+                });
+                return;
+            }
+
+            // Post headcount panel to raid channel
+            const sent = await raidChannel.send({
                 content: '@here',
                 embeds: [embed],
                 components: [buttonRow, ...keyButtonRows]

@@ -8,21 +8,21 @@ import {
     TimestampStyles,
     TextChannel,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
-import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../lib/http.js';
+import type { SlashCommand } from '../../_types.js';
+import { getMemberRoleIds, canBotManageRole, canActorTargetMember } from '../../../lib/permissions/permissions.js';
+import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/http.js';
 
 /**
  * /unsuspend - Remove an active suspension from a member
- * Officer+ command
+ * Security+ command
  * Deactivates the suspension and removes the suspended role
  */
 export const unsuspend: SlashCommand = {
-    requiredRole: 'officer',
+    requiredRole: 'security',
     mutatesRoles: true,
     data: new SlashCommandBuilder()
         .setName('unsuspend')
-        .setDescription('Remove an active suspension from a member (Officer+)')
+        .setDescription('Remove an active suspension from a member (Security+)')
         .addUserOption(option =>
             option
                 .setName('member')
@@ -71,6 +71,16 @@ export const unsuspend: SlashCommand = {
                 targetMember = await interaction.guild.members.fetch(targetUser.id);
             } catch {
                 await interaction.editReply(`❌ <@${targetUser.id}> is not a member of this server.`);
+                return;
+            }
+
+            // Role hierarchy and bot position check
+            const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
+                allowSelf: false,
+                checkBotPosition: true
+            });
+            if (!targetCheck.canTarget) {
+                await interaction.editReply(targetCheck.reason!);
                 return;
             }
 
@@ -235,10 +245,11 @@ export const unsuspend: SlashCommand = {
                 if (err instanceof BackendError) {
                     switch (err.code) {
                         case 'NOT_AUTHORIZED':
-                            errorMessage += '**Issue:** You don\'t have the Moderator role configured for this server.\n\n';
+                        case 'NOT_SECURITY':
+                            errorMessage += '**Issue:** You don\'t have the Security role configured for this server.\n\n';
                             errorMessage += '**What to do:**\n';
-                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Moderator role\n';
-                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Moderator';
+                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Security role\n';
+                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Security';
                             break;
                         case 'PUNISHMENT_NOT_FOUND':
                             errorMessage += '**Issue:** The suspension could not be found or has already been removed.\n\n';

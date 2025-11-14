@@ -358,8 +358,7 @@ rotmg-raid-bot/
             ├── pagination.ts          # ✅ Paginated embed builder for long lists
             ├── dungeon-cache.ts       # ✅ Track recently used dungeons per guild
             ├── dungeon-autocomplete.ts # ✅ Dungeon autocomplete handler
-            ├── run-auto-end.ts        # ✅ Automatic run expiration task (5-min intervals)
-            ├── suspension-cleanup.ts  # ✅ Automatic suspension expiration task (1-min intervals)
+            ├── scheduled-tasks.ts     # ✅ Unified scheduler for all auto-checks (runs, suspensions, verification)
             ├── quota-panel.ts         # ✅ Quota leaderboard panel management
             ├── configpoints-panel.ts  # ✅ Raider points configuration panel
             ├── team-role-manager.ts   # ✅ Automatic Team role assignment for staff
@@ -984,9 +983,9 @@ Shows paginated list of all punishments for the user (active and removed).
    - **Benefit**: Better debugging, log levels, formatting
 
 3. **Error Recovery in Tasks**
-   - **Problem**: Auto-end and suspension cleanup tasks may crash on errors
-   - **Solution**: Add comprehensive try-catch with error logging
-   - **Files**: `bot/src/lib/run-auto-end.ts`, `bot/src/lib/suspension-cleanup.ts`
+   - **Status**: ✅ RESOLVED - All tasks now use unified scheduler with error recovery
+   - **Solution**: Implemented comprehensive try-catch with error logging and task statistics
+   - **Files**: `bot/src/lib/scheduled-tasks.ts`
 
 4. **Race Conditions in Run Status**
    - **Problem**: Multiple organizers could click Start/End simultaneously

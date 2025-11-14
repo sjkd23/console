@@ -7,6 +7,7 @@ import { zSnowflake } from '../lib/constants.js';
 import { Errors } from '../lib/errors.js';
 import { logAudit } from '../lib/audit.js';
 import { hasModerator } from '../lib/permissions.js';
+import { ensureMemberExists } from '../lib/database-helpers.js';
 
 /**
  * Schema for creating a punishment
@@ -75,6 +76,11 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
             : null;
 
         try {
+            // Ensure actor and target exist in member table before creating punishment
+            // This prevents foreign key constraint violations in audit logging
+            await ensureMemberExists(actor_user_id);
+            await ensureMemberExists(user_id);
+
             // Generate a cryptographically secure random 24-character hex ID
             const punishmentId = randomBytes(12).toString('hex'); // 12 bytes = 24 hex characters
 
@@ -399,6 +405,10 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
                 console.log(`[Punishments] User ${actor_user_id} denied removal - not moderator`);
                 return Errors.notAuthorized(reply);
             }
+
+            // Ensure actor exists in member table before updating punishment
+            // This prevents foreign key constraint violations in audit logging
+            await ensureMemberExists(actor_user_id);
 
             // Deactivate the punishment
             const result = await query<{

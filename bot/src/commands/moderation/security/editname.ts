@@ -8,10 +8,10 @@ import {
     TimestampStyles,
     TextChannel,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { hasInternalRole, getMemberRoleIds, hasHigherRole } from '../../lib/permissions/permissions.js';
-import { updateRaiderIGN, BackendError, getGuildChannels } from '../../lib/http.js';
-import { logCommandExecution } from '../../lib/bot-logger.js';
+import type { SlashCommand } from '../../_types.js';
+import { hasInternalRole, getMemberRoleIds, canActorTargetMember } from '../../../lib/permissions/permissions.js';
+import { updateRaiderIGN, BackendError, getGuildChannels } from '../../../lib/http.js';
+import { logCommandExecution } from '../../../lib/bot-logger.js';
 
 /**
  * /editname - Update a verified raider's IGN and nickname.
@@ -112,24 +112,13 @@ export const editname: SlashCommand = {
         await interaction.deferReply();
 
         // Check role hierarchy
-        try {
-            // Check if bot can manage the target (Discord role hierarchy) - check this FIRST
-            const botMember = await interaction.guild.members.fetchMe();
-            if (targetMember.roles.highest.position >= botMember.roles.highest.position) {
-                await interaction.editReply('❌ **Cannot Modify Member**\n\nThis member has a higher or equal role than the bot in the Discord role hierarchy.\n\nThe bot cannot manage members with higher roles. Ask a server admin to adjust role positions.');
-                return;
-            }
-
-            // Check internal role hierarchy - prevent targeting someone with equal or higher role
-            const canTarget = await hasHigherRole(invokerMember, targetMember);
-            
-            if (!canTarget) {
-                await interaction.editReply('❌ **Access Denied**\n\nYou cannot edit the IGN of someone with an equal or higher role than you.\n\nThis prevents abuse of moderation permissions in the role hierarchy.');
-                return;
-            }
-        } catch (hierarchyErr) {
-            console.error('[Edit Name] Role hierarchy check failed:', hierarchyErr);
-            // Continue anyway - don't block on hierarchy check failure
+        const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
+            allowSelf: false,
+            checkBotPosition: true
+        });
+        if (!targetCheck.canTarget) {
+            await interaction.editReply(targetCheck.reason!);
+            return;
         }
 
         try {

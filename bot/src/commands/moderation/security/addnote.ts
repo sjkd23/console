@@ -7,10 +7,10 @@ import {
     time,
     TimestampStyles,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { canActorTargetMember, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { createNote, BackendError } from '../../lib/http.js';
-import { logCommandExecution } from '../../lib/bot-logger.js';
+import type { SlashCommand } from '../../_types.js';
+import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { createNote, BackendError } from '../../../lib/http.js';
+import { logCommandExecution } from '../../../lib/bot-logger.js';
 
 /**
  * /addnote - Add a silent staff note to a member
@@ -80,7 +80,8 @@ export const addnote: SlashCommand = {
 
             // Role hierarchy check
             const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
-                allowSelf: false
+                allowSelf: false,
+                checkBotPosition: true
             });
             if (!targetCheck.canTarget) {
                 await interaction.editReply(targetCheck.reason!);

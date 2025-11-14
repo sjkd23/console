@@ -11,6 +11,7 @@ import {
 import { getOrganizerId } from '../../../lib/headcount-state.js';
 import { clearKeyOffers } from './headcount-key.js';
 import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/raid-logger.js';
+import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
 export async function handleHeadcountEnd(btn: ButtonInteraction, publicMessageId: string) {
     await btn.deferUpdate();
@@ -36,10 +37,19 @@ export async function handleHeadcountEnd(btn: ButtonInteraction, publicMessageId
     const embed = EmbedBuilder.from(embeds[0]);
     const organizerId = getOrganizerId(embed);
 
-    // Authorization check - only organizer can end
-    if (!organizerId || organizerId !== btn.user.id) {
+    if (!organizerId) {
         await btn.editReply({
-            content: '❌ Only the headcount organizer can end this headcount.',
+            content: 'Could not determine the headcount organizer.',
+            components: []
+        });
+        return;
+    }
+
+    // Authorization check using centralized helper
+    const accessCheck = await checkOrganizerAccess(btn, organizerId);
+    if (!accessCheck.allowed) {
+        await btn.editReply({
+            content: accessCheck.errorMessage,
             components: []
         });
         return;

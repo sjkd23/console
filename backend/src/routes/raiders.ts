@@ -135,8 +135,9 @@ export default async function raidersRoutes(app: FastifyInstance) {
         // Upsert guild
         await ensureGuildExists(guild_id);
 
-        // Upsert member
+        // Upsert member (target) and actor
         await ensureMemberExists(user_id);
+        await ensureMemberExists(actor_user_id);
 
         // Check if this IGN is already in use by a different user in this guild
         const existingIgn = await query<{ user_id: string; ign: string }>(
@@ -240,6 +241,9 @@ export default async function raidersRoutes(app: FastifyInstance) {
                 },
             });
         }
+
+        // Ensure actor exists in member table before audit logging
+        await ensureMemberExists(actor_user_id);
 
         // Check if raider exists and is verified
         const existingRaider = await query<{ ign: string; status: string }>(
@@ -352,6 +356,9 @@ export default async function raidersRoutes(app: FastifyInstance) {
                 },
             });
         }
+
+        // Ensure actor exists in member table before audit logging
+        await ensureMemberExists(actor_user_id);
 
         // Check if raider exists
         const existingRaider = await query<{ ign: string; status: string }>(

@@ -24,6 +24,7 @@ import { getReactionInfo } from '../../../constants/MappedAfkCheckReactions.js';
 import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/key-emoji-helpers.js';
 import { fetchGuildMember } from '../../../lib/interaction-helpers.js';
 import { logRaidCreation } from '../../../lib/raid-logger.js';
+import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
     // Fetch the public headcount message
@@ -56,10 +57,19 @@ export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessa
     const embed = EmbedBuilder.from(embeds[0]);
     const organizerId = getOrganizerId(embed);
 
-    // Authorization check - only organizer can convert
-    if (!organizerId || organizerId !== btn.user.id) {
+    if (!organizerId) {
         await btn.reply({
-            content: '❌ Only the headcount organizer can convert this headcount.',
+            content: 'Could not determine the headcount organizer.',
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // Authorization check using centralized helper
+    const accessCheck = await checkOrganizerAccess(btn, organizerId);
+    if (!accessCheck.allowed) {
+        await btn.reply({
+            content: accessCheck.errorMessage,
             flags: MessageFlags.Ephemeral
         });
         return;
@@ -208,14 +218,14 @@ async function convertHeadcountToRun(
     const dungeonKeys = keyOffers.get(dungeonCode);
     const keyUserIds = dungeonKeys ? Array.from(dungeonKeys) : [];
 
-    // Create the run in the backend
+    // Create the run in the backend (use the channel where the headcount was posted)
     const { runId } = await postJSON<{ runId: number }>('/runs', {
         guildId: interaction.guild.id,
         guildName: interaction.guild.name,
         organizerId: organizerId,
         organizerUsername: interaction.user.username,
         organizerRoles: getMemberRoleIds(member),
-        channelId: interaction.channelId!,
+        channelId: publicMsg.channelId, // Use the channel where headcount was posted (should be raid channel)
         dungeonKey: dungeon.codeName,
         dungeonLabel: dungeon.dungeonName,
         autoEndMinutes: 120

@@ -37,9 +37,9 @@ const LogRunBody = z.object({
     actorId: zSnowflake,
     actorRoles: z.array(zSnowflake).optional(),
     guildId: zSnowflake,
-    runId: z.number().int().positive().optional(), // Optional if dungeonKey is provided
-    dungeonKey: z.string().optional(), // Optional dungeon key - will find most recent run
-    amount: z.number().int().default(1), // Amount is count of runs (integer), not points
+    organizerId: zSnowflake.optional(), // Target organizer to log quota for (defaults to actorId)
+    dungeonKey: z.string(), // Required: dungeon type for the manual quota log
+    amount: z.number().int().default(1), // Amount is count of runs (integer), not points - can be negative
 });
 
 /**
@@ -58,12 +58,12 @@ export default async function quotaRoutes(app: FastifyInstance) {
     /**
      * POST /quota/log-run
      * Manually log run completion quota for an organizer.
+     * This is a fully manual operation - no actual run record is required.
      * Authorization: actorId must have organizer role or higher.
-     * No idempotency: Can be called multiple times for the same run.
      * Supports negative amounts to remove quota points.
      * 
-     * Body: { actorId, actorRoles?, guildId, runId?, dungeonKey?, amount? }
-     * Returns: { logged: number, already_logged: false, total_points: number, organizer_id: string }
+     * Body: { actorId, actorRoles?, guildId, organizerId?, dungeonKey, amount? }
+     * Returns: { logged: number, total_points: number, organizer_id: string }
      */
     app.post('/quota/log-run', async (req, reply) => {
         const parsed = LogRunBody.safeParse(req.body);
@@ -72,36 +72,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             return Errors.validation(reply, msg);
         }
 
-        let { actorId, actorRoles, guildId, runId, dungeonKey, amount } = parsed.data;
+        const { actorId, actorRoles, guildId, organizerId, dungeonKey, amount } = parsed.data;
 
-        // Validate that either runId or dungeonKey is provided
-        if (!runId && !dungeonKey) {
-            return Errors.validation(reply, 'Either runId or dungeonKey must be provided');
-        }
-
-        // If dungeonKey is provided but not runId, find the most recent run
-        if (dungeonKey && !runId) {
-            const recentRunRes = await query<{ id: number }>(
-                `SELECT id FROM run 
-                 WHERE guild_id = $1::bigint 
-                   AND organizer_id = $2::bigint 
-                   AND dungeon_key = $3
-                 ORDER BY created_at DESC 
-                 LIMIT 1`,
-                [guildId, actorId, dungeonKey]
-            );
-
-            if (recentRunRes.rowCount === 0) {
-                return reply.code(404).send({
-                    error: {
-                        code: 'RUN_NOT_FOUND',
-                        message: `No ${dungeonKey} runs found for organizer ${actorId}`,
-                    },
-                });
-            }
-
-            runId = recentRunRes.rows[0].id;
-        }
+        // Default organizerId to actorId if not provided (self-logging)
+        const targetOrganizerId = organizerId || actorId;
 
         // Authorization: actor must have organizer role or higher
         const hasOrganizerRole = await hasInternalRole(guildId, actorId, 'organizer', actorRoles);
@@ -115,37 +89,22 @@ export default async function quotaRoutes(app: FastifyInstance) {
             });
         }
 
-        // Verify run exists and get organizer and dungeon_key
-        const runRes = await query<{ organizer_id: string; guild_id: string; status: string; dungeon_key: string }>(
-            `SELECT organizer_id, guild_id, status, dungeon_key FROM run WHERE id = $1::bigint`,
-            [runId]
-        );
-
-        if (runRes.rowCount === 0) {
-            return Errors.runNotFound(reply, runId);
+        // Ensure both actor and target organizer exist in the member table
+        try {
+            await ensureMemberExists(actorId);
+            await ensureMemberExists(targetOrganizerId);
+        } catch (err) {
+            console.error(`[Quota] Failed to ensure members exist:`, err);
+            return Errors.internal(reply, 'Failed to process quota logging');
         }
 
-        const run = runRes.rows[0];
-
-        // Verify run is in the correct guild
-        if (run.guild_id !== guildId) {
-            return reply.code(400).send({
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: `Run ${runId} does not belong to guild ${guildId}`,
-                },
-            });
-        }
-
-        // Log quota events for the organizer
-        const organizerId = run.organizer_id;
-        const runDungeonKey = run.dungeon_key;
         let totalPoints = 0;
         let loggedCount = 0;
 
         try {
-            // Get the correct point value for this dungeon based on guild config
-            const pointsPerRun = await getPointsForDungeon(guildId, runDungeonKey, actorRoles);
+            // Get the correct quota point value for this dungeon based on guild config
+            // This queries quota_dungeon_override table (set via /configquota)
+            const pointsPerRun = await getPointsForDungeon(guildId, dungeonKey, actorRoles);
             
             // Log events based on amount (can be positive or negative)
             const absoluteAmount = Math.abs(amount);
@@ -153,26 +112,27 @@ export default async function quotaRoutes(app: FastifyInstance) {
             for (let i = 0; i < absoluteAmount; i++) {
                 const event = await logQuotaEvent(
                     guildId,
-                    organizerId,
+                    targetOrganizerId,
                     'run_completed',
-                    undefined, // No subject_id - allow unlimited logging
-                    runDungeonKey,
-                    amount > 0 ? pointsPerRun : -pointsPerRun // Apply calculated points (positive or negative)
+                    undefined, // No subject_id - manual logging doesn't reference a specific run
+                    dungeonKey,
+                    amount > 0 ? pointsPerRun : -pointsPerRun // Apply calculated quota points (positive or negative)
                 );
 
                 if (event) {
-                    totalPoints += event.points;
+                    // Use quota_points (organizer points), NOT points (raider points)
+                    // Convert to number in case DB returns string
+                    totalPoints += Number(event.quota_points);
                     loggedCount += 1;
                 }
             }
 
-            console.log(`[Quota] Manually logged ${loggedCount} run(s) for organizer ${organizerId} in guild ${guildId} (dungeon: ${runDungeonKey}, points per run: ${pointsPerRun}, total points: ${totalPoints})`);
+            console.log(`[Quota] Manually logged ${loggedCount} run(s) for organizer ${targetOrganizerId} in guild ${guildId} (dungeon: ${dungeonKey}, points per run: ${pointsPerRun}, total points: ${totalPoints})`);
 
             return reply.code(200).send({
                 logged: loggedCount,
-                already_logged: false,
                 total_points: totalPoints,
-                organizer_id: organizerId,
+                organizer_id: targetOrganizerId,
             });
         } catch (err) {
             console.error(`[Quota] Failed to manually log run:`, err);

@@ -8,19 +8,19 @@ import {
     TimestampStyles,
     TextChannel,
 } from 'discord.js';
-import type { SlashCommand } from '../_types.js';
-import { canActorTargetMember, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { createPunishment, BackendError, getGuildChannels } from '../../lib/http.js';
+import type { SlashCommand } from '../../_types.js';
+import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { createPunishment, BackendError, getGuildChannels } from '../../../lib/http.js';
 
 /**
  * /warn - Issue a warning to a member
- * Moderator-only command
+ * Security+ command
  */
 export const warn: SlashCommand = {
     requiredRole: 'security',
     data: new SlashCommandBuilder()
         .setName('warn')
-        .setDescription('Issue a warning to a member (Moderator only)')
+        .setDescription('Issue a warning to a member (Security+)')
         .addUserOption(option =>
             option
                 .setName('member')
@@ -80,7 +80,8 @@ export const warn: SlashCommand = {
 
             // Role hierarchy check
             const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
-                allowSelf: false
+                allowSelf: false,
+                checkBotPosition: true
             });
             if (!targetCheck.canTarget) {
                 await interaction.editReply(targetCheck.reason!);
@@ -169,10 +170,11 @@ export const warn: SlashCommand = {
                 if (err instanceof BackendError) {
                     switch (err.code) {
                         case 'NOT_AUTHORIZED':
-                            errorMessage += '**Issue:** You don\'t have the Moderator role configured for this server.\n\n';
+                        case 'NOT_SECURITY':
+                            errorMessage += '**Issue:** You don\'t have the Security role configured for this server.\n\n';
                             errorMessage += '**What to do:**\n';
-                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Moderator role\n';
-                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Moderator';
+                            errorMessage += '• Ask a server admin to use `/setroles` to set up the Security role\n';
+                            errorMessage += '• Make sure you have the Discord role that\'s mapped to Security';
                             break;
                         case 'VALIDATION_ERROR':
                             errorMessage += `**Issue:** ${err.message}\n\n`;

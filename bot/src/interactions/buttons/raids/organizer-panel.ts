@@ -11,35 +11,16 @@ import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permi
 import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/key-emoji-helpers.js';
 import { logButtonClick } from '../../../lib/raid-logger.js';
 
-export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string) {
-    // Fetch run status from backend to determine which buttons to show
-    const run = await getJSON<{
-        status: string;
-        dungeonLabel: string;
-        dungeonKey: string;
-        organizerId: string;
-    }>(
-        `/runs/${runId}`
-    ).catch(() => null);
-
-    if (!run) {
-        await btn.reply({
-            content: 'Could not fetch run details.',
-            flags: MessageFlags.Ephemeral
-        });
-        return;
-    }
-
-    // Authorization check using centralized helper
-    const accessCheck = await checkOrganizerAccess(btn, run.organizerId);
-    if (!accessCheck.allowed) {
-        await btn.reply({
-            content: accessCheck.errorMessage,
-            flags: MessageFlags.Ephemeral
-        });
-        return;
-    }
-
+/**
+ * Internal function to build and show the organizer panel.
+ * Used by both initial access and confirmed access.
+ */
+async function showOrganizerPanel(btn: ButtonInteraction, runId: string, run: {
+    status: string;
+    dungeonLabel: string;
+    dungeonKey: string;
+    organizerId: string;
+}) {
     // Fetch key reaction users if there are key reactions for this dungeon
     let keyUsers: Record<string, string[]> = {};
     const keyUsersResponse = await getJSON<{ keyUsers: Record<string, string[]> }>(
@@ -47,8 +28,9 @@ export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string
     ).catch(() => ({ keyUsers: {} }));
     keyUsers = keyUsersResponse.keyUsers;
 
-    const firstEmbed = btn.message.embeds?.[0];
-    const dungeonTitle = firstEmbed?.title ?? run.dungeonLabel ?? 'Raid';
+    // Use dungeonLabel from run data instead of trying to parse from embed
+    // (which might be the confirmation embed if coming from confirm button)
+    const dungeonTitle = run.dungeonLabel || 'Raid';
 
     const panelEmbed = new EmbedBuilder()
         .setTitle(`Organizer Panel — ${dungeonTitle}`)
@@ -145,15 +127,17 @@ export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string
         controls = [row1, row2];
     } else {
         // Ended phase: no controls
-        await btn.reply({
-            content: 'This run has ended.',
-            flags: MessageFlags.Ephemeral
-        });
+        const message = 'This run has ended.';
+        if (btn.deferred || btn.replied) {
+            await btn.editReply({ content: message, embeds: [], components: [] });
+        } else {
+            await btn.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
         return;
     }
 
     if (btn.deferred || btn.replied) {
-        await btn.followUp({ embeds: [panelEmbed], components: controls, flags: MessageFlags.Ephemeral });
+        await btn.editReply({ embeds: [panelEmbed], components: controls });
     } else {
         await btn.reply({ embeds: [panelEmbed], components: controls, flags: MessageFlags.Ephemeral });
     }
@@ -179,4 +163,117 @@ export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string
             console.error('Failed to log organizer panel access:', e);
         }
     }
+}
+
+export async function handleOrganizerPanel(btn: ButtonInteraction, runId: string) {
+    // Fetch run status from backend to determine which buttons to show
+    const run = await getJSON<{
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+    }>(
+        `/runs/${runId}`
+    ).catch(() => null);
+
+    if (!run) {
+        await btn.reply({
+            content: 'Could not fetch run details.',
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // Authorization check using centralized helper
+    const accessCheck = await checkOrganizerAccess(btn, run.organizerId);
+    if (!accessCheck.allowed) {
+        await btn.reply({
+            content: accessCheck.errorMessage,
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // If not the original organizer, show confirmation panel first
+    if (!accessCheck.isOriginalOrganizer) {
+        const confirmEmbed = new EmbedBuilder()
+            .setTitle('⚠️ Confirmation Required')
+            .setDescription(
+                `This run is being hosted by <@${run.organizerId}>.\n\n` +
+                `Are you sure you want to manage it?\n\n` +
+                `**Note:** Your actions will be logged under your name.`
+            )
+            .setColor(0xffa500) // Orange color
+            .setTimestamp(new Date());
+
+        const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`run:org:confirm:${runId}`)
+                .setLabel('Confirm')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`run:org:deny:${runId}`)
+                .setLabel('Deny')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await btn.reply({
+            embeds: [confirmEmbed],
+            components: [confirmRow],
+            flags: MessageFlags.Ephemeral
+        });
+        return;
+    }
+
+    // Original organizer - show panel directly
+    await showOrganizerPanel(btn, runId, run);
+}
+
+/**
+ * Handle confirmation when a different organizer wants to manage a run.
+ */
+export async function handleOrganizerPanelConfirm(btn: ButtonInteraction, runId: string) {
+    await btn.deferUpdate();
+
+    // Fetch run details
+    const run = await getJSON<{
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+    }>(`/runs/${runId}`).catch(() => null);
+
+    if (!run) {
+        await btn.editReply({
+            content: 'Could not fetch run details.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Verify they still have organizer access
+    const accessCheck = await checkOrganizerAccess(btn, run.organizerId);
+    if (!accessCheck.allowed) {
+        await btn.editReply({
+            content: accessCheck.errorMessage,
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Show the full organizer panel
+    await showOrganizerPanel(btn, runId, run);
+}
+
+/**
+ * Handle denial when a different organizer decides not to manage a run.
+ */
+export async function handleOrganizerPanelDeny(btn: ButtonInteraction, runId: string) {
+    await btn.update({
+        content: 'Access denied. You can reopen the organizer panel at any time.',
+        embeds: [],
+        components: []
+    });
 }
