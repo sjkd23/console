@@ -9,9 +9,9 @@ import {
     ChannelType,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { setGuildChannels, BackendError } from '../../lib/http.js';
+import { setGuildChannels, BackendError } from '../../lib/utilities/http.js';
 import { hasInternalRole, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { logCommandExecution, logConfigChange } from '../../lib/bot-logger.js';
+import { logCommandExecution, logConfigChange } from '../../lib/logging/bot-logger.js';
 
 const CHANNEL_OPTIONS = [
     { key: 'raid', label: 'Raid', description: 'Main channel for raid announcements and coordination' },
@@ -22,6 +22,7 @@ const CHANNEL_OPTIONS = [
     { key: 'raid_log', label: 'Raid Log', description: 'Log channel for raid-related events' },
     { key: 'quota', label: 'Quota', description: 'Channel for quota leaderboard panels and tracking' },
     { key: 'bot_log', label: 'Bot Log', description: 'General bot activity and command execution logs' },
+    { key: 'staff_updates', label: 'Staff Updates', description: 'Channel for staff promotion announcements' },
 ] as const;
 
 export const setchannels: SlashCommand = {
@@ -37,6 +38,7 @@ export const setchannels: SlashCommand = {
         .addChannelOption(o => o.setName('raid_log').setDescription('Raid log channel').addChannelTypes(ChannelType.GuildText))
         .addChannelOption(o => o.setName('quota').setDescription('Quota leaderboard channel').addChannelTypes(ChannelType.GuildText))
         .addChannelOption(o => o.setName('bot_log').setDescription('Bot activity log channel').addChannelTypes(ChannelType.GuildText))
+        .addChannelOption(o => o.setName('staff_updates').setDescription('Staff promotion announcements channel').addChannelTypes(ChannelType.GuildText))
         .setDMPermission(false),
 
     async run(interaction: ChatInputCommandInteraction): Promise<void> {

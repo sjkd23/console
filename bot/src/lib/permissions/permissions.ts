@@ -1,5 +1,5 @@
 import type { GuildMember } from 'discord.js';
-import { getJSON } from '../http.js';
+import { getJSON } from '../utilities/http.js';
 
 /**
  * Internal role keys (must match backend role_catalog)
@@ -19,6 +19,19 @@ export type RoleKey =
  */
 const ROLE_HIERARCHY: RoleKey[] = [
     'verified_raider',
+    'organizer',
+    'security',
+    'officer',
+    'head_organizer',
+    'moderator',
+    'administrator',
+];
+
+/**
+ * Roles that can be added via /addrole command
+ * Excludes verified_raider (requires verification) and suspended (punishment only)
+ */
+const ADDABLE_ROLES: RoleKey[] = [
     'organizer',
     'security',
     'officer',
@@ -322,5 +335,49 @@ export function extractFirstUserMentionId(text?: string | null): string | undefi
     if (!text) return;
     const m = text.match(/<@(\d{5,})>/);
     return m?.[1];
+}
+
+// ===== ROLE ADDITION HELPERS =====
+
+/**
+ * Get all roles that an actor is allowed to add via /addrole
+ * Actor can add any role strictly below their highest role in the hierarchy
+ */
+export async function getRolesActorCanAdd(actor: GuildMember): Promise<RoleKey[]> {
+    // Find actor's highest role in hierarchy
+    let actorHighestIndex = -1;
+    for (let i = ROLE_HIERARCHY.length - 1; i >= 0; i--) {
+        if (await hasInternalRole(actor, ROLE_HIERARCHY[i])) {
+            actorHighestIndex = i;
+            break;
+        }
+    }
+
+    if (actorHighestIndex === -1) {
+        return []; // Actor has no internal roles
+    }
+
+    // Return all addable roles strictly below actor's highest role
+    return ADDABLE_ROLES.filter(role => {
+        const roleIndex = ROLE_HIERARCHY.indexOf(role);
+        return roleIndex < actorHighestIndex;
+    });
+}
+
+/**
+ * Check if actor can add a specific role to another member
+ * Requirements:
+ * - Role must be in ADDABLE_ROLES list
+ * - Role must be strictly below actor's highest role in hierarchy
+ */
+export async function canActorAddRole(actor: GuildMember, roleToAdd: RoleKey): Promise<boolean> {
+    // Check if role is addable at all
+    if (!ADDABLE_ROLES.includes(roleToAdd)) {
+        return false;
+    }
+
+    // Check if actor outranks the role they're trying to add
+    const rolesActorCanAdd = await getRolesActorCanAdd(actor);
+    return rolesActorCanAdd.includes(roleToAdd);
 }
 

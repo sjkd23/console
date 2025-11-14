@@ -8,7 +8,7 @@ import {
     ComponentType
 } from 'discord.js';
 import { ROTMG_CLASSES } from '../../../constants/classes.js';
-import { patchJSON } from '../../../lib/http.js';
+import { patchJSON } from '../../../lib/utilities/http.js';
 
 function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
     const data = embed.toJSON();

@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin';
 import { backendConfig } from '../config.js';
-import { Errors } from '../lib/errors';
+import { Errors } from '../lib/errors/errors';
 declare module 'fastify' {
     interface FastifyRequest {
         apiKeyValid?: boolean;

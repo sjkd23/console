@@ -1,9 +1,9 @@
 import { ButtonInteraction, ChannelType, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { getJSON, patchJSON, deleteJSON, BackendError } from '../../../lib/http.js';
+import { getJSON, patchJSON, deleteJSON, BackendError } from '../../../lib/utilities/http.js';
 import { getMemberRoleIds } from '../../../lib//permissions/permissions.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
-import { getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/key-emoji-helpers.js';
-import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/raid-logger.js';
+import { getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/utilities/key-emoji-helpers.js';
+import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/logging/raid-logger.js';
 
 export async function handleStatus(
     btn: ButtonInteraction,

@@ -12,11 +12,11 @@ import {
     StringSelectMenuInteraction,
     ComponentType,
 } from 'discord.js';
-import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, getGuildChannels, BackendError } from '../../../lib/http.js';
-import { DUNGEON_DATA } from '../../../constants/DungeonData.js';
-import { updateQuotaPanel } from '../../../lib/quota-panel.js';
-import { formatPoints } from '../../../lib/format-helpers.js';
-import { buildQuotaConfigPanel } from '../../../lib/quota-config-panel.js';
+import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, getGuildChannels, BackendError } from '../../../lib/utilities/http.js';
+import { DUNGEON_DATA } from '../../../constants/dungeons/DungeonData.js';
+import { updateQuotaPanel } from '../../../lib/ui/quota-panel.js';
+import { formatPoints } from '../../../lib/formatting/format-helpers.js';
+import { buildQuotaConfigPanel } from '../../../lib/ui/quota-config-panel.js';
 
 /**
  * Helper function to build the dungeon selection dropdown panel

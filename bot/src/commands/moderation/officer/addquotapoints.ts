@@ -8,10 +8,10 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
-import { adjustQuotaPoints } from '../../../lib/http.js';
-import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../../../lib/error-handler.js';
-import { logCommandExecution, logQuotaAction } from '../../../lib/bot-logger.js';
+import { adjustQuotaPoints } from '../../../lib/utilities/http.js';
+import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../../../lib/errors/error-handler.js';
+import { logCommandExecution, logQuotaAction } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /addquotapoints - Manually adjust quota points for a member.

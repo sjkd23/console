@@ -13,13 +13,13 @@ import {
     ComponentType
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { ensureGuildContext } from '../../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../../lib/error-handler.js';
-import { dungeonByCode, searchDungeons } from '../../constants/dungeon-helpers.js';
-import type { DungeonInfo } from '../../constants/dungeon-types.js';
-import { getDungeonKeyEmojiIdentifier } from '../../lib/key-emoji-helpers.js';
-import { logRaidCreation } from '../../lib/raid-logger.js';
-import { getGuildChannels } from '../../lib/http.js';
+import { ensureGuildContext } from '../../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/errors/error-handler.js';
+import { dungeonByCode, searchDungeons } from '../../constants/dungeons/dungeon-helpers.js';
+import type { DungeonInfo } from '../../constants/dungeons/dungeon-types.js';
+import { getDungeonKeyEmojiIdentifier } from '../../lib/utilities/key-emoji-helpers.js';
+import { logRaidCreation } from '../../lib/logging/raid-logger.js';
+import { getGuildChannels } from '../../lib/utilities/http.js';
 
 export const headcount: SlashCommand = {
     requiredRole: 'organizer',

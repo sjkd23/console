@@ -8,9 +8,9 @@ import {
     EmbedBuilder,
     ChannelType
 } from 'discord.js';
-import { getOrganizerId } from '../../../lib/headcount-state.js';
+import { getOrganizerId } from '../../../lib/state/headcount-state.js';
 import { clearKeyOffers } from './headcount-key.js';
-import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/raid-logger.js';
+import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/logging/raid-logger.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
 export async function handleHeadcountEnd(btn: ButtonInteraction, publicMessageId: string) {

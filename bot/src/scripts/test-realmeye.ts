@@ -6,7 +6,7 @@
  */
 
 import { fetchRealmEyePlayerProfile } from '../services/realmeye/index.js';
-import { checkRealmEyeVerification } from '../lib/verification.js';
+import { checkRealmEyeVerification } from '../lib/verification/verification.js';
 
 async function testRealmEye() {
     const args = process.argv.slice(2);

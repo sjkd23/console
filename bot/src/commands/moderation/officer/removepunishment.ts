@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
-import { removePunishment, getPunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/http.js';
+import { removePunishment, getPunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/utilities/http.js';
 
 /**
  * /removepunishment - Permanently remove a punishment from records

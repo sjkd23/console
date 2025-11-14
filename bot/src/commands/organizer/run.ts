@@ -12,15 +12,15 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
 import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { postJSON, getGuildChannels } from '../../lib/http.js';
-import { dungeonByCode } from '../../constants/dungeon-helpers.js';
-import { addRecentDungeon } from '../../lib/dungeon-cache.js';
-import { getReactionInfo } from '../../constants/MappedAfkCheckReactions.js';
-import { ensureGuildContext, fetchGuildMember } from '../../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../../lib/error-handler.js';
-import { handleDungeonAutocomplete } from '../../lib/dungeon-autocomplete.js';
-import { formatKeyLabel } from '../../lib/key-emoji-helpers.js';
-import { logRaidCreation } from '../../lib/raid-logger.js';
+import { postJSON, getGuildChannels } from '../../lib/utilities/http.js';
+import { dungeonByCode } from '../../constants/dungeons/dungeon-helpers.js';
+import { addRecentDungeon } from '../../lib/dungeon/dungeon-cache.js';
+import { getReactionInfo } from '../../constants/emojis/MappedAfkCheckReactions.js';
+import { ensureGuildContext, fetchGuildMember } from '../../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../../lib/errors/error-handler.js';
+import { handleDungeonAutocomplete } from '../../lib/dungeon/dungeon-autocomplete.js';
+import { formatKeyLabel } from '../../lib/utilities/key-emoji-helpers.js';
+import { logRaidCreation } from '../../lib/logging/raid-logger.js';
 
 export const runCreate: SlashCommand = {
     requiredRole: 'organizer',

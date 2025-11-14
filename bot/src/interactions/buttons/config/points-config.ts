@@ -13,10 +13,10 @@ import {
     StringSelectMenuInteraction,
     Message,
 } from 'discord.js';
-import { getRaiderPointsConfig, setRaiderPoints, deleteRaiderPoints, BackendError } from '../../../lib/http.js';
-import { DUNGEON_DATA } from '../../../constants/DungeonData.js';
-import { buildConfigPointsPanel } from '../../../lib/configpoints-panel.js';
-import { formatPoints } from '../../../lib/format-helpers.js';
+import { getRaiderPointsConfig, setRaiderPoints, deleteRaiderPoints, BackendError } from '../../../lib/utilities/http.js';
+import { DUNGEON_DATA } from '../../../constants/dungeons/DungeonData.js';
+import { buildConfigPointsPanel } from '../../../lib/ui/configpoints-panel.js';
+import { formatPoints } from '../../../lib/formatting/format-helpers.js';
 
 /**
  * Helper function to build the dungeon selection dropdown panel

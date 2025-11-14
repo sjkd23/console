@@ -4,10 +4,10 @@
  */
 
 import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
-import { setEmbedField } from '../../../lib/embed-builders.js';
-import { dungeonByCode } from '../../../constants/dungeon-helpers.js';
-import { getDungeonKeyEmoji } from '../../../lib/key-emoji-helpers.js';
-import { logKeyReaction } from '../../../lib/raid-logger.js';
+import { setEmbedField } from '../../../lib/ui/embed-builders.js';
+import { dungeonByCode } from '../../../constants/dungeons/dungeon-helpers.js';
+import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
+import { logKeyReaction } from '../../../lib/logging/raid-logger.js';
 
 /**
  * In-memory storage for key offers per headcount panel.

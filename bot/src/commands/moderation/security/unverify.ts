@@ -10,8 +10,8 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
-import { updateRaiderStatus, BackendError, getGuildChannels, getRaider, getGuildRoles } from '../../../lib/http.js';
-import { logCommandExecution, logVerificationAction } from '../../../lib/bot-logger.js';
+import { updateRaiderStatus, BackendError, getGuildChannels, getRaider, getGuildRoles } from '../../../lib/utilities/http.js';
+import { logCommandExecution, logVerificationAction } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /unverify - Remove verification status from a raider.

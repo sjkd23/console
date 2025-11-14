@@ -15,15 +15,15 @@ import {
     ChannelType,
     type GuildTextBasedChannel
 } from 'discord.js';
-import { getOrganizerId, getParticipants } from '../../../lib/headcount-state.js';
+import { getOrganizerId, getParticipants } from '../../../lib/state/headcount-state.js';
 import { getKeyOffers, clearKeyOffers } from './headcount-key.js';
-import { dungeonByCode } from '../../../constants/dungeon-helpers.js';
-import { postJSON } from '../../../lib/http.js';
+import { dungeonByCode } from '../../../constants/dungeons/dungeon-helpers.js';
+import { postJSON } from '../../../lib/utilities/http.js';
 import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
-import { getReactionInfo } from '../../../constants/MappedAfkCheckReactions.js';
-import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/key-emoji-helpers.js';
-import { fetchGuildMember } from '../../../lib/interaction-helpers.js';
-import { logRaidCreation } from '../../../lib/raid-logger.js';
+import { getReactionInfo } from '../../../constants/emojis/MappedAfkCheckReactions.js';
+import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/utilities/key-emoji-helpers.js';
+import { fetchGuildMember } from '../../../lib/utilities/interaction-helpers.js';
+import { logRaidCreation } from '../../../lib/logging/raid-logger.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {

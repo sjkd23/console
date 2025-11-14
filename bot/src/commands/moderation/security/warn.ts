@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
-import { createPunishment, BackendError, getGuildChannels } from '../../../lib/http.js';
+import { createPunishment, BackendError, getGuildChannels } from '../../../lib/utilities/http.js';
 
 /**
  * /warn - Issue a warning to a member

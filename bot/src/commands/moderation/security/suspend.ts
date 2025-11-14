@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
-import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/http.js';
+import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/utilities/http.js';
 
 /**
  * /suspend - Temporarily suspend a member from raid participation

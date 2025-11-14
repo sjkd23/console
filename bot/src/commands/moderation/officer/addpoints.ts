@@ -8,10 +8,10 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
-import { adjustPoints } from '../../../lib/http.js';
-import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../../../lib/error-handler.js';
-import { logCommandExecution } from '../../../lib/bot-logger.js';
+import { adjustPoints } from '../../../lib/utilities/http.js';
+import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../../../lib/errors/error-handler.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /addpoints - Manually adjust regular (raider) points for a member.
