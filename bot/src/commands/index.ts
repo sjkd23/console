@@ -25,6 +25,7 @@ import { ping } from './ping.js';
 import { addquotapoints } from './moderation/officer/addquotapoints.js';
 import { addpoints } from './moderation/officer/addpoints.js';
 import { headcount } from './organizer/headcount.js';
+import { addrole } from './moderation/security/addrole.js';
 
 // Apply permission middleware to all commands
 export const commands: SlashCommand[] = [
@@ -52,6 +53,7 @@ export const commands: SlashCommand[] = [
     withPermissionCheck(ping),
     withPermissionCheck(addquotapoints),
     withPermissionCheck(addpoints),
+    withPermissionCheck(addrole),
 ];
 
 export function toJSON() {
