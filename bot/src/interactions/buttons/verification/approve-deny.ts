@@ -19,6 +19,7 @@ import {
     createSuccessEmbed,
     deleteSession,
     validateIGN,
+    logVerificationEvent,
 } from '../../../lib/verification.js';
 import { hasInternalRole } from '../../../lib/permissions/permissions.js';
 
@@ -230,6 +231,17 @@ export async function handleVerificationApproveModal(interaction: ModalSubmitInt
             `They have been notified via DM.`
         );
 
+        // Log approval
+        await logVerificationEvent(
+            interaction.guild,
+            userId,
+            `**✅ Manual verification approved** by <@${interaction.user.id}>\n` +
+            `• IGN: \`${ign}\`\n` +
+            `• Role Applied: ${applyResult.roleApplied ? '✅' : '❌'}\n` +
+            `• Nickname Set: ${applyResult.nicknameSet ? '✅' : '❌'}` +
+            (applyResult.errors.length > 0 ? `\n• Errors: ${applyResult.errors.join(', ')}` : '')
+        );
+
         // Clean up session after delay
         setTimeout(() => {
             deleteSession(guildId, userId).catch(console.error);
@@ -376,6 +388,15 @@ export async function handleVerificationDeny(interaction: ButtonInteraction): Pr
                 content: `✅ **Verification Denied**\n\n<@${userId}> has been notified.`,
                 ephemeral: true,
             });
+
+            // Log denial
+            await logVerificationEvent(
+                interaction.guild!,
+                userId,
+                `**❌ Manual verification denied** by <@${interaction.user.id}>\n` +
+                `**Reason:** ${reason || 'No reason provided'}`,
+                { error: true }
+            );
 
             // Delete the reason message
             try {

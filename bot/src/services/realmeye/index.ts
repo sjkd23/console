@@ -103,7 +103,7 @@ export async function fetchRealmEyePlayerProfile(ign: string): Promise<RealmEyeP
         ign,
         resultCode: 'Success',
         descriptionLinesCount: descriptionLines.length,
-        sample: descriptionLines.slice(0, 3),
+        descriptionLines: descriptionLines,
     });
 
     return {
@@ -128,6 +128,8 @@ function parseDescriptionLines(html: string): string[] {
     const $ = cheerio.load(html);
     const lines: string[] = [];
 
+    console.log('[RealmEye] Parsing description lines...');
+
     // RealmEyeSharper pattern: loop through line1, line2, line3
     for (let i = 1; i <= 3; i++) {
         // Select div with class "line{i}"
@@ -135,16 +137,24 @@ function parseDescriptionLines(html: string): string[] {
         const selector = `div.line${i}`;
         const element = $(selector);
 
+        console.log(`[RealmEye] Checking ${selector}:`, {
+            found: element.length > 0,
+            html: element.html(),
+            text: element.text(),
+        });
+
         if (element.length > 0) {
             // Get text content, cheerio automatically decodes HTML entities
             const text = element.text().trim();
 
             if (text.length > 0) {
+                console.log(`[RealmEye] Added line ${i}: "${text}"`);
                 lines.push(text);
             }
         }
     }
 
+    console.log(`[RealmEye] Total description lines parsed: ${lines.length}`);
     return lines;
 }
 

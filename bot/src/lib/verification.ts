@@ -179,19 +179,32 @@ export async function checkRealmEyeVerification(
     // Use the new centralized RealmEye scraper
     const { fetchRealmEyePlayerProfile } = await import('../services/realmeye/index.js');
     
+    console.log(`[Verification] Checking RealmEye for IGN: "${ign}", looking for code: "${code}"`);
+    
     const profile = await fetchRealmEyePlayerProfile(ign);
+
+    console.log(`[Verification] RealmEye result:`, {
+        resultCode: profile.resultCode,
+        descriptionLinesCount: profile.descriptionLines.length,
+        descriptionLines: profile.descriptionLines,
+    });
 
     // Map result codes to the existing return format for backward compatibility
     switch (profile.resultCode) {
         case 'Success': {
             // Join description lines into a single string for the legacy format
             const description = profile.descriptionLines.join('\n');
+            console.log(`[Verification] Full description: "${description}"`);
+            console.log(`[Verification] Looking for code: "${code}"`);
+            
             const found = description.includes(code);
 
             if (found) {
                 console.log('[Verification] ✅ Code found in description!');
             } else {
                 console.log('[Verification] ❌ Code NOT found in description');
+                console.log('[Verification] Description length:', description.length);
+                console.log('[Verification] Code length:', code.length);
             }
 
             return {
@@ -581,4 +594,102 @@ export function createSuccessEmbed(
         .setFooter({ text: 'You can now close this DM' });
 
     return embed;
+}
+
+// ===== VERIFICATION LOGGING =====
+
+/**
+ * Log a verification event to the veri_log channel in a dedicated thread
+ * Creates a thread for the user if it doesn't exist yet
+ */
+export async function logVerificationEvent(
+    guild: Guild,
+    userId: string,
+    message: string,
+    options?: {
+        embed?: EmbedBuilder;
+        error?: boolean;
+    }
+): Promise<void> {
+    try {
+        // Get veri_log channel
+        const { channels } = await getGuildChannels(guild.id);
+        const veriLogChannelId = channels.veri_log;
+
+        if (!veriLogChannelId) {
+            return; // No veri_log channel configured
+        }
+
+        const veriLogChannel = await guild.channels.fetch(veriLogChannelId);
+        if (!veriLogChannel || !veriLogChannel.isTextBased()) {
+            return;
+        }
+
+        // Get user info for thread name
+        const user = await guild.client.users.fetch(userId);
+        const threadName = `Verification - ${user.tag}`;
+
+        // Try to find existing thread for this user
+        let thread;
+        if ('threads' in veriLogChannel) {
+            const activeThreads = await veriLogChannel.threads.fetchActive();
+            thread = activeThreads.threads.find(t => t.name === threadName);
+
+            // If not in active, check archived
+            if (!thread) {
+                const archivedThreads = await veriLogChannel.threads.fetchArchived();
+                thread = archivedThreads.threads.find(t => t.name === threadName);
+                
+                // Unarchive if found
+                if (thread && thread.archived) {
+                    await thread.setArchived(false);
+                }
+            }
+        }
+
+        // Create thread if it doesn't exist
+        if (!thread && 'threads' in veriLogChannel) {
+            thread = await veriLogChannel.threads.create({
+                name: threadName,
+                autoArchiveDuration: 60, // 1 hour
+                reason: `Verification tracking for ${user.tag}`,
+            });
+
+            // Send initial message
+            const initialEmbed = new EmbedBuilder()
+                .setTitle('🎮 Verification Session Started')
+                .setDescription(
+                    `**User:** <@${userId}> (${user.tag})\n` +
+                    `**User ID:** ${userId}\n` +
+                    `**Started:** <t:${Math.floor(Date.now() / 1000)}:F>`
+                )
+                .setColor(0x00AE86)
+                .setTimestamp();
+
+            await thread.send({ embeds: [initialEmbed] });
+        }
+
+        // Send the log message to the thread
+        if (thread) {
+            const emoji = options?.error ? '❌' : '📝';
+            const color = options?.error ? 0xFF0000 : 0x5865F2;
+            
+            const logEmbed = new EmbedBuilder()
+                .setDescription(`${emoji} ${message}`)
+                .setColor(color)
+                .setTimestamp();
+
+            const messageOptions: any = { embeds: [logEmbed] };
+            
+            // Add custom embed if provided
+            if (options?.embed) {
+                messageOptions.embeds.push(options.embed);
+            }
+
+            await thread.send(messageOptions);
+        }
+    } catch (err) {
+        // Don't fail the verification process if logging fails
+        console.error('[VerificationLogging] Failed to log event:', err);
+    }
 }

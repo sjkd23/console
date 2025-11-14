@@ -28,6 +28,7 @@ import {
     createVerificationTicketEmbed,
     createVerificationTicketButtons,
     deleteSession,
+    logVerificationEvent,
 } from '../../../lib/verification.js';
 import { getJSON, getGuildVerificationConfig, getGuildChannels } from '../../../lib/http.js';
 
@@ -67,11 +68,37 @@ export async function handleGetVerified(interaction: ButtonInteraction): Promise
             return;
         }
 
+        // Check if user already has an active verification session
+        try {
+            const existingSession = await getSessionByUserId(interaction.user.id);
+            if (existingSession && 
+                existingSession.status !== 'expired' && 
+                existingSession.status !== 'verified' && 
+                existingSession.status !== 'cancelled' &&
+                existingSession.status !== 'denied') {
+                await interaction.editReply(
+                    '⚠️ **Active Verification Session**\n\n' +
+                    `You already have an active verification session (status: ${existingSession.status}).\n\n` +
+                    'Please complete or cancel your current verification before starting a new one.\n' +
+                    'Check your DMs or type "cancel" to cancel the current session.'
+                );
+                return;
+            }
+        } catch (err) {
+            // Session not found is OK, continue
+        }
+
         // Try to open DM
         let dmChannel: DMChannel;
         try {
             dmChannel = await interaction.user.createDM();
         } catch (err) {
+            await logVerificationEvent(
+                interaction.guild,
+                interaction.user.id,
+                '**Failed to send DM** - User has DMs disabled from server members.',
+                { error: true }
+            );
             await interaction.editReply(
                 '❌ **Cannot Send DM**\n\n' +
                 'I couldn\'t send you a direct message. Please enable DMs from server members:\n' +
@@ -119,6 +146,13 @@ export async function handleGetVerified(interaction: ButtonInteraction): Promise
             '✅ **Verification Started!**\n\n' +
             'Check your DMs for verification instructions.\n\n' +
             'If you don\'t see a message from me, please check your privacy settings.'
+        );
+
+        // Log verification start
+        await logVerificationEvent(
+            interaction.guild,
+            interaction.user.id,
+            '**User clicked "Get Verified"** button and received DM with verification method options.'
         );
 
         // Don't start any collectors yet - wait for button click
@@ -195,6 +229,14 @@ async function collectIGN(
             status: 'pending_realmeye',
         });
 
+        // Log IGN submission
+        const guild = member.guild;
+        await logVerificationEvent(
+            guild,
+            userId,
+            `**IGN submitted:** \`${input}\`\n**Verification code generated:** \`${code}\`\nWaiting for user to add code to RealmEye profile...`
+        );
+
         // Send RealmEye instructions
         const instructionsEmbed = createRealmEyeInstructionsEmbed(input, code, guildName);
         const buttons = createRealmEyeButtons();
@@ -253,15 +295,35 @@ export async function handleVerificationDone(interaction: ButtonInteraction): Pr
         // Extract guildId from session
         const guildId = session.guild_id;
 
+        // Get guild for logging
+        const guild = interaction.client.guilds.cache.get(guildId);
+
         // Check RealmEye
         await interaction.editReply(
             '🔍 **Checking RealmEye...**\n\n' +
             `Looking for verification code in ${session.rotmg_ign}'s profile...`
         );
 
+        // Log checking attempt
+        if (guild) {
+            await logVerificationEvent(
+                guild,
+                interaction.user.id,
+                `**Checking RealmEye** for IGN \`${session.rotmg_ign}\`...`
+            );
+        }
+
         const result = await checkRealmEyeVerification(session.rotmg_ign, session.verification_code);
 
         if (result.error) {
+            if (guild) {
+                await logVerificationEvent(
+                    guild,
+                    interaction.user.id,
+                    `**RealmEye check failed:** ${result.error}`,
+                    { error: true }
+                );
+            }
             await interaction.editReply(
                 `❌ **Error**: ${result.error}\n\n` +
                 'Please fix the issue and click **Done** again.'
@@ -270,6 +332,13 @@ export async function handleVerificationDone(interaction: ButtonInteraction): Pr
         }
 
         if (!result.found) {
+            if (guild) {
+                await logVerificationEvent(
+                    guild,
+                    interaction.user.id,
+                    `**Code not found** in RealmEye profile yet. User will retry.`
+                );
+            }
             await interaction.editReply(
                 '❌ **Code Not Found**\n\n' +
                 `I couldn't find the verification code in your RealmEye description yet.\n\n` +
@@ -288,8 +357,16 @@ export async function handleVerificationDone(interaction: ButtonInteraction): Pr
             'Applying verification...'
         );
 
+        // Log success
+        if (guild) {
+            await logVerificationEvent(
+                guild,
+                interaction.user.id,
+                `**✅ Code found on RealmEye!** Applying verification...`
+            );
+        }
+
         // Get guild and member using guildId from session
-        const guild = interaction.client.guilds.cache.get(guildId);
         if (!guild) {
             await interaction.editReply('❌ Could not find guild. Please contact staff.');
             return;
@@ -306,6 +383,17 @@ export async function handleVerificationDone(interaction: ButtonInteraction): Pr
 
         // Mark session as verified
         await updateSession(guildId, interaction.user.id, { status: 'verified' });
+
+        // Log completion
+        await logVerificationEvent(
+            guild,
+            interaction.user.id,
+            `**✅ Verification Complete!**\n` +
+            `• IGN: \`${session.rotmg_ign}\`\n` +
+            `• Role Applied: ${applyResult.roleApplied ? '✅' : '❌'}\n` +
+            `• Nickname Set: ${applyResult.nicknameSet ? '✅' : '❌'}` +
+            (applyResult.errors.length > 0 ? `\n• Errors: ${applyResult.errors.join(', ')}` : '')
+        );
 
         // Send success message
         const successEmbed = createSuccessEmbed(
@@ -422,6 +510,13 @@ export async function handleRealmEyeVerification(interaction: ButtonInteraction)
             'Please type your in-game name (IGN) in the next message.'
         );
 
+        // Log method selection
+        await logVerificationEvent(
+            guild,
+            interaction.user.id,
+            '**User selected RealmEye verification** method. Waiting for IGN input...'
+        );
+
         // Send IGN request
         const embed = createIgnRequestEmbed(guild.name);
         await dmChannel.send({ embeds: [embed] });
@@ -482,6 +577,13 @@ export async function handleManualVerifyScreenshot(interaction: ButtonInteractio
         await interaction.editReply(
             '📷 **Manual Verification Selected**\n\n' +
             'Please upload your screenshot as instructed.'
+        );
+
+        // Log method selection
+        await logVerificationEvent(
+            guild,
+            interaction.user.id,
+            '**User selected Manual Screenshot verification** method. Waiting for screenshot upload...'
         );
 
         // Update session to manual verification mode
@@ -558,12 +660,23 @@ async function collectScreenshot(
         // Valid screenshot received
         collector.stop('success');
 
+        const guild = dmChannel.client.guilds.cache.get(guildId);
+
         await dmChannel.send(
             '✅ **Screenshot Received**\n\n' +
             'Your screenshot has been submitted for review by security+.\n' +
             'You will receive a DM when your verification is approved or denied.\n\n' +
             '**Note:** Security+ will provide your IGN when approving your request.'
         );
+
+        // Log screenshot submission
+        if (guild) {
+            await logVerificationEvent(
+                guild,
+                userId,
+                `**Screenshot submitted** for manual verification. Creating ticket for Security+ review...`
+            );
+        }
 
         // Update session with screenshot (no IGN yet)
         await updateSession(guildId, userId, {
@@ -578,6 +691,14 @@ async function collectScreenshot(
 
             if (!manualVerificationChannelId) {
                 console.error('[ManualVerification] No manual-verification channel configured');
+                if (guild) {
+                    await logVerificationEvent(
+                        guild,
+                        userId,
+                        '**❌ Error:** No manual verification channel configured in server.',
+                        { error: true }
+                    );
+                }
                 await dmChannel.send(
                     '⚠️ **Configuration Error**\n\n' +
                     'The server has not configured a manual verification channel.\n' +
@@ -586,7 +707,6 @@ async function collectScreenshot(
                 return;
             }
 
-            const guild = dmChannel.client.guilds.cache.get(guildId);
             if (!guild) return;
 
             const channel = await guild.channels.fetch(manualVerificationChannelId);
@@ -608,6 +728,13 @@ async function collectScreenshot(
             await updateSession(guildId, userId, {
                 ticket_message_id: ticketMessage.id,
             });
+
+            // Log ticket creation
+            await logVerificationEvent(
+                guild,
+                userId,
+                `**Verification ticket created** in <#${manualVerificationChannelId}>. Awaiting Security+ approval.`
+            );
         } catch (err) {
             console.error('[ManualVerification] Error creating ticket:', err);
             await dmChannel.send(
