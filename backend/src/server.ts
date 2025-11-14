@@ -2,15 +2,15 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import { backendConfig } from './config.js';
 import authPlugin from './plugins/auth.js';
-import healthRoutes from './routes/health.js';
-import runsRoutes from './routes/runs.js';
-import raidersRoutes from './routes/raiders.js';
-import guildsRoutes from './routes/guilds.js';
-import punishmentsRoutes from './routes/punishments.js';
-import quotaRoutes from './routes/quota.js';
-import notesRoutes from './routes/notes.js';
-import verificationRoutes from './routes/verification.js';
-import commandLogRoutes from './routes/command-log.js';
+import healthRoutes from './routes/system/health.js';
+import runsRoutes from './routes/raid/runs.js';
+import raidersRoutes from './routes/raid/raiders.js';
+import guildsRoutes from './routes/admin/guilds.js';
+import punishmentsRoutes from './routes/moderation/punishments.js';
+import quotaRoutes from './routes/raid/quota.js';
+import notesRoutes from './routes/moderation/notes.js';
+import verificationRoutes from './routes/system/verification.js';
+import commandLogRoutes from './routes/admin/command-log.js';
 
 const app = Fastify({ logger: true });
 

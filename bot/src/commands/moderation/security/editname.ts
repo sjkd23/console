@@ -10,8 +10,8 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { hasInternalRole, getMemberRoleIds, canActorTargetMember } from '../../../lib/permissions/permissions.js';
-import { updateRaiderIGN, BackendError, getGuildChannels } from '../../../lib/http.js';
-import { logCommandExecution } from '../../../lib/bot-logger.js';
+import { updateRaiderIGN, BackendError, getGuildChannels } from '../../../lib/utilities/http.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /editname - Update a verified raider's IGN and nickname.

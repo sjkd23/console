@@ -20,7 +20,7 @@ import {
     deleteSession,
     validateIGN,
     logVerificationEvent,
-} from '../../../lib/verification.js';
+} from '../../../lib/verification/verification.js';
 import { hasInternalRole } from '../../../lib/permissions/permissions.js';
 
 const DENIAL_REASON_TIMEOUT = 5 * 60 * 1000; // 5 minutes

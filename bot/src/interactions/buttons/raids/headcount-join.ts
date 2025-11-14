@@ -4,9 +4,9 @@
  */
 
 import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
-import { setEmbedField } from '../../../lib/embed-builders.js';
-import { getParticipants, updateParticipantsList } from '../../../lib/headcount-state.js';
-import { logRaidJoin } from '../../../lib/raid-logger.js';
+import { setEmbedField } from '../../../lib/ui/embed-builders.js';
+import { getParticipants, updateParticipantsList } from '../../../lib/state/headcount-state.js';
+import { logRaidJoin } from '../../../lib/logging/raid-logger.js';
 
 /**
  * Handle join button click for headcount panel.

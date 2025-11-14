@@ -59,10 +59,10 @@ import {
     handleVerificationDeny,
     handleVerificationApproveModal,
 } from './interactions/buttons/verification/approve-deny.js';
-import { startScheduledTasks } from './lib/scheduled-tasks.js';
-import { syncTeamRoleForMember } from './lib/team-role-manager.js';
-import { logCommandExecution, createSuccessResult, createErrorResult } from './lib/command-logging.js';
-import { BackendError } from './lib/http.js';
+import { startScheduledTasks } from './lib/tasks/scheduled-tasks.js';
+import { syncTeamRoleForMember } from './lib/team/team-role-manager.js';
+import { logCommandExecution, createSuccessResult, createErrorResult } from './lib/logging/command-logging.js';
+import { BackendError } from './lib/utilities/http.js';
 
 const client = new Client({
     intents: [

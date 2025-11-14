@@ -6,12 +6,12 @@ import {
     EmbedBuilder,
 } from 'discord.js';
 import type { SlashCommand } from './_types.js';
-import { getQuotaStats } from '../lib/http.js';
-import { dungeonByCode } from '../constants/dungeon-helpers.js';
-import { DUNGEON_DATA } from '../constants/DungeonData.js';
-import { ensureGuildContext } from '../lib/interaction-helpers.js';
-import { formatErrorMessage } from '../lib/error-handler.js';
-import { formatPoints } from '../lib/format-helpers.js';
+import { getQuotaStats } from '../lib/utilities/http.js';
+import { dungeonByCode } from '../constants/dungeons/dungeon-helpers.js';
+import { DUNGEON_DATA } from '../constants/dungeons/DungeonData.js';
+import { ensureGuildContext } from '../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../lib/errors/error-handler.js';
+import { formatPoints } from '../lib/formatting/format-helpers.js';
 
 /**
  * /stats - View quota statistics for yourself or another member.

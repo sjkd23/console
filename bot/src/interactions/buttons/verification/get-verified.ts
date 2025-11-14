@@ -29,8 +29,8 @@ import {
     createVerificationTicketButtons,
     deleteSession,
     logVerificationEvent,
-} from '../../../lib/verification.js';
-import { getJSON, getGuildVerificationConfig, getGuildChannels } from '../../../lib/http.js';
+} from '../../../lib/verification/verification.js';
+import { getJSON, getGuildVerificationConfig, getGuildChannels } from '../../../lib/utilities/http.js';
 
 const MAX_IGN_ATTEMPTS = 3;
 const MESSAGE_COLLECT_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -237,8 +237,16 @@ async function collectIGN(
             `**IGN submitted:** \`${input}\`\n**Verification code generated:** \`${code}\`\nWaiting for user to add code to RealmEye profile...`
         );
 
+        // Fetch guild config for custom RealmEye instructions image
+        const config = await getGuildVerificationConfig(guildId);
+
         // Send RealmEye instructions
-        const instructionsEmbed = createRealmEyeInstructionsEmbed(input, code, guildName);
+        const instructionsEmbed = createRealmEyeInstructionsEmbed(
+            input, 
+            code, 
+            guildName,
+            config.realmeye_instructions_image
+        );
         const buttons = createRealmEyeButtons();
 
         await dmChannel.send({
@@ -593,7 +601,11 @@ export async function handleManualVerifyScreenshot(interaction: ButtonInteractio
         });
 
         // Send screenshot instructions
-        const embed = createManualVerificationEmbed(guild.name, config.manual_verify_instructions);
+        const embed = createManualVerificationEmbed(
+            guild.name, 
+            config.manual_verify_instructions,
+            config.manual_verify_instructions_image
+        );
         const cancelButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()
                 .setCustomId('verification:cancel')

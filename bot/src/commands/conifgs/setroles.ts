@@ -8,9 +8,9 @@ import {
     GuildMember,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { setGuildRoles, BackendError } from '../../lib/http.js';
+import { setGuildRoles, BackendError } from '../../lib/utilities/http.js';
 import { hasInternalRole, getMemberRoleIds, invalidateRoleCache } from '../../lib/permissions/permissions.js';
-import { logCommandExecution, logConfigChange } from '../../lib/bot-logger.js';
+import { logCommandExecution, logConfigChange } from '../../lib/logging/bot-logger.js';
 
 const ROLE_OPTIONS = [
     { key: 'administrator', label: 'Administrator', description: 'Full admin for bot actions' },

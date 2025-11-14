@@ -10,7 +10,7 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
 import { getMemberRoleIds, canBotManageRole, canActorTargetMember } from '../../../lib/permissions/permissions.js';
-import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/http.js';
+import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/utilities/http.js';
 
 /**
  * /unsuspend - Remove an active suspension from a member

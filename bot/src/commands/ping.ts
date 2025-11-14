@@ -4,7 +4,7 @@ import {
     EmbedBuilder,
 } from 'discord.js';
 import type { SlashCommand } from './_types.js';
-import { logCommandExecution } from '../lib/bot-logger.js';
+import { logCommandExecution } from '../lib/logging/bot-logger.js';
 
 /**
  * /ping - Check the bot's latency and response time

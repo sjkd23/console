@@ -4,8 +4,8 @@ import {
     MessageFlags,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { BackendError } from '../../lib/http.js';
-import { buildQuotaConfigPanel } from '../../lib/quota-config-panel.js';
+import { BackendError } from '../../lib/utilities/http.js';
+import { buildQuotaConfigPanel } from '../../lib/ui/quota-config-panel.js';
 
 /**
  * /configquota - Configure quota settings for a specific role

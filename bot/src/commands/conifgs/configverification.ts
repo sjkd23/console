@@ -9,12 +9,12 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { getGuildChannels, BackendError, getGuildVerificationConfig, updateGuildVerificationConfig } from '../../lib/http.js';
+import { getGuildChannels, BackendError, getGuildVerificationConfig, updateGuildVerificationConfig } from '../../lib/utilities/http.js';
 import { hasInternalRole, getMemberRoleIds } from '../../lib/permissions/permissions.js';
 import {
     createVerificationPanelEmbed,
     createVerificationPanelButton,
-} from '../../lib/verification.js';
+} from '../../lib/verification/verification.js';
 
 export const configverification: SlashCommand = {
     requiredRole: 'moderator',
@@ -38,6 +38,12 @@ export const configverification: SlashCommand = {
                         .setDescription('Optional custom message to include in the panel embed')
                         .setRequired(false)
                 )
+                .addStringOption(o =>
+                    o
+                        .setName('image_url')
+                        .setDescription('Optional image URL to display in the panel embed')
+                        .setRequired(false)
+                )
         )
         .addSubcommand(sub =>
             sub
@@ -49,6 +55,12 @@ export const configverification: SlashCommand = {
                         .setDescription('Custom message to display in the panel embed (leave empty to clear)')
                         .setRequired(false)
                 )
+                .addStringOption(o =>
+                    o
+                        .setName('image_url')
+                        .setDescription('Image URL to display in the panel embed (leave empty to clear)')
+                        .setRequired(false)
+                )
         )
         .addSubcommand(sub =>
             sub
@@ -58,6 +70,23 @@ export const configverification: SlashCommand = {
                     o
                         .setName('instructions')
                         .setDescription('Custom instructions with example picture info (leave empty to clear)')
+                        .setRequired(false)
+                )
+                .addStringOption(o =>
+                    o
+                        .setName('image_url')
+                        .setDescription('Image URL to display with manual instructions (leave empty to clear)')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('set-realmeye-instructions')
+                .setDescription('Set custom instructions for RealmEye verification')
+                .addStringOption(o =>
+                    o
+                        .setName('image_url')
+                        .setDescription('Image URL to display with RealmEye instructions (leave empty to clear)')
                         .setRequired(false)
                 )
         )
@@ -94,6 +123,8 @@ export const configverification: SlashCommand = {
                 await handleSetPanelMessage(interaction, member);
             } else if (subcommand === 'set-manual-instructions') {
                 await handleSetManualInstructions(interaction, member);
+            } else if (subcommand === 'set-realmeye-instructions') {
+                await handleSetRealmEyeInstructions(interaction, member);
             }
         } catch (unhandled) {
             console.error('[configverification] Unhandled error:', unhandled);
@@ -114,8 +145,9 @@ async function handleSendPanel(
 ): Promise<void> {
     const guild = interaction.guild!;
 
-    // Get custom message option
+    // Get custom message and image URL options
     const customMessage = interaction.options.getString('custom_message');
+    const imageUrl = interaction.options.getString('image_url');
 
     // Get target channel (from option or config)
     let targetChannel: TextChannel | null = null;
@@ -177,14 +209,16 @@ async function handleSendPanel(
 
     // Send verification panel
     try {
-        // Get saved custom message if not provided
+        // Get saved custom message/image if not provided
         let finalCustomMessage = customMessage;
-        if (!finalCustomMessage) {
+        let finalImageUrl = imageUrl;
+        if (!finalCustomMessage || !finalImageUrl) {
             const config = await getGuildVerificationConfig(guild.id);
-            finalCustomMessage = config.panel_custom_message;
+            if (!finalCustomMessage) finalCustomMessage = config.panel_custom_message;
+            if (!finalImageUrl) finalImageUrl = config.panel_custom_message_image;
         }
 
-        const embed = createVerificationPanelEmbed(finalCustomMessage);
+        const embed = createVerificationPanelEmbed(finalCustomMessage, finalImageUrl);
         const button = createVerificationPanelButton();
 
         const message = await targetChannel.send({
@@ -213,26 +247,30 @@ async function handleSetPanelMessage(
 ): Promise<void> {
     const guild = interaction.guild!;
     const message = interaction.options.getString('message') || null;
+    const imageUrl = interaction.options.getString('image_url') || null;
 
     try {
         await updateGuildVerificationConfig(guild.id, {
             panel_custom_message: message ?? undefined,
+            panel_custom_message_image: imageUrl ?? undefined,
         });
 
-        if (message) {
-            await interaction.editReply(
-                `✅ **Panel message updated**\n\n` +
-                `**New message:**\n${message}\n\n` +
-                `This message will be included in future verification panels.\n` +
-                `Use \`/configverification send-panel\` to post an updated panel.`
-            );
+        let response = '';
+        if (message || imageUrl) {
+            response = `✅ **Panel message updated**\n\n`;
+            if (message) response += `**New message:**\n${message}\n\n`;
+            if (imageUrl) response += `**Image URL:**\n${imageUrl}\n\n`;
+            response += 
+                `This will be included in future verification panels.\n` +
+                `Use \`/configverification send-panel\` to post an updated panel.`;
         } else {
-            await interaction.editReply(
+            response = 
                 `✅ **Panel message cleared**\n\n` +
-                `The custom panel message has been removed.\n` +
-                `Verification panels will use the default message.`
-            );
+                `The custom panel message and image have been removed.\n` +
+                `Verification panels will use the default message.`;
         }
+
+        await interaction.editReply(response);
     } catch (err) {
         console.error('[configverification] Error updating panel message:', err);
         await interaction.editReply(
@@ -247,29 +285,66 @@ async function handleSetManualInstructions(
 ): Promise<void> {
     const guild = interaction.guild!;
     const instructions = interaction.options.getString('instructions') || null;
+    const imageUrl = interaction.options.getString('image_url') || null;
 
     try {
         await updateGuildVerificationConfig(guild.id, {
             manual_verify_instructions: instructions ?? undefined,
+            manual_verify_instructions_image: imageUrl ?? undefined,
         });
 
-        if (instructions) {
-            await interaction.editReply(
-                `✅ **Manual verification instructions updated**\n\n` +
-                `**New instructions:**\n${instructions}\n\n` +
-                `These instructions will be shown to users who select "Manual Verify Screenshot".`
-            );
+        let response = '';
+        if (instructions || imageUrl) {
+            response = `✅ **Manual verification instructions updated**\n\n`;
+            if (instructions) response += `**New instructions:**\n${instructions}\n\n`;
+            if (imageUrl) response += `**Image URL:**\n${imageUrl}\n\n`;
+            response += 
+                `These will be shown to users who select "Manual Verify Screenshot".`;
         } else {
-            await interaction.editReply(
+            response = 
                 `✅ **Manual verification instructions cleared**\n\n` +
-                `The custom instructions have been removed.\n` +
-                `Users will see the default instructions when choosing manual verification.`
-            );
+                `The custom instructions and image have been removed.\n` +
+                `Users will see the default instructions when choosing manual verification.`;
         }
+
+        await interaction.editReply(response);
     } catch (err) {
         console.error('[configverification] Error updating manual instructions:', err);
         await interaction.editReply(
             '❌ Failed to update manual instructions. Please try again later.'
+        );
+    }
+}
+
+async function handleSetRealmEyeInstructions(
+    interaction: ChatInputCommandInteraction,
+    member: GuildMember
+): Promise<void> {
+    const guild = interaction.guild!;
+    const imageUrl = interaction.options.getString('image_url') || null;
+
+    try {
+        await updateGuildVerificationConfig(guild.id, {
+            realmeye_instructions_image: imageUrl ?? undefined,
+        });
+
+        if (imageUrl) {
+            await interaction.editReply(
+                `✅ **RealmEye verification instructions updated**\n\n` +
+                `**Image URL:**\n${imageUrl}\n\n` +
+                `This image will be shown to users during RealmEye verification.`
+            );
+        } else {
+            await interaction.editReply(
+                `✅ **RealmEye verification instructions image cleared**\n\n` +
+                `The custom image has been removed.\n` +
+                `Users will see the default RealmEye verification instructions.`
+            );
+        }
+    } catch (err) {
+        console.error('[configverification] Error updating RealmEye instructions:', err);
+        await interaction.editReply(
+            '❌ Failed to update RealmEye instructions. Please try again later.'
         );
     }
 }

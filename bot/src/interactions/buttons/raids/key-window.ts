@@ -1,7 +1,7 @@
 import { ButtonInteraction, ChannelType, EmbedBuilder } from 'discord.js';
-import { setKeyWindow, getJSON, BackendError } from '../../../lib/http.js';
-import { getDungeonKeyEmoji } from '../../../lib/key-emoji-helpers.js';
-import { logKeyWindow } from '../../../lib/raid-logger.js';
+import { setKeyWindow, getJSON, BackendError } from '../../../lib/utilities/http.js';
+import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
+import { logKeyWindow } from '../../../lib/logging/raid-logger.js';
 
 /**
  * Handle "Key popped" button press.

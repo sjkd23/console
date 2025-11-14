@@ -1,6 +1,6 @@
 import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
-import { postJSON, getJSON } from '../../../lib/http.js';
-import { logRaidJoin } from '../../../lib/raid-logger.js';
+import { postJSON, getJSON } from '../../../lib/utilities/http.js';
+import { logRaidJoin } from '../../../lib/logging/raid-logger.js';
 
 function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
     const data = embed.toJSON();

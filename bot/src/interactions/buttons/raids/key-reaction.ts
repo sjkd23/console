@@ -1,7 +1,7 @@
 import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
-import { postJSON, getJSON } from '../../../lib/http.js';
-import { formatKeyLabel, getKeyTypeSuffix, getDungeonKeyEmoji } from '../../../lib/key-emoji-helpers.js';
-import { logKeyReaction } from '../../../lib/raid-logger.js';
+import { postJSON, getJSON } from '../../../lib/utilities/http.js';
+import { formatKeyLabel, getKeyTypeSuffix, getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
+import { logKeyReaction } from '../../../lib/logging/raid-logger.js';
 
 
 function updateKeysField(embed: EmbedBuilder, keyCounts: Record<string, number>, dungeonKey: string, btn: ButtonInteraction): EmbedBuilder {

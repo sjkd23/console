@@ -7,8 +7,8 @@ import {
     GuildMember,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { BackendError } from '../../lib/http.js';
-import { buildConfigPointsPanel } from '../../lib/configpoints-panel.js';
+import { BackendError } from '../../lib/utilities/http.js';
+import { buildConfigPointsPanel } from '../../lib/ui/configpoints-panel.js';
 
 /**
  * /configpoints - Configure raider points for dungeons

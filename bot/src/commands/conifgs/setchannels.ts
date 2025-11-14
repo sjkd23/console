@@ -9,9 +9,9 @@ import {
     ChannelType,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { setGuildChannels, BackendError } from '../../lib/http.js';
+import { setGuildChannels, BackendError } from '../../lib/utilities/http.js';
 import { hasInternalRole, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { logCommandExecution, logConfigChange } from '../../lib/bot-logger.js';
+import { logCommandExecution, logConfigChange } from '../../lib/logging/bot-logger.js';
 
 const CHANNEL_OPTIONS = [
     { key: 'raid', label: 'Raid', description: 'Main channel for raid announcements and coordination' },

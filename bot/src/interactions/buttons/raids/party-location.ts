@@ -8,9 +8,9 @@ import {
     ActionRowBuilder,
     ModalActionRowComponentBuilder
 } from 'discord.js';
-import { getJSON, patchJSON, BackendError } from '../../../lib/http.js';
+import { getJSON, patchJSON, BackendError } from '../../../lib/utilities/http.js';
 import { getMemberRoleIds } from '../../../lib//permissions/permissions.js';
-import { logRunInfoUpdate } from '../../../lib/raid-logger.js';
+import { logRunInfoUpdate } from '../../../lib/logging/raid-logger.js';
 
 /**
  * Handle "Set Party" button press.

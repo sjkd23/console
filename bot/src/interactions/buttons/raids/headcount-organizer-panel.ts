@@ -14,10 +14,10 @@ import {
     ComponentType,
     Message
 } from 'discord.js';
-import { getParticipants, getOrganizerId } from '../../../lib/headcount-state.js';
+import { getParticipants, getOrganizerId } from '../../../lib/state/headcount-state.js';
 import { getKeyOffers } from './headcount-key.js';
-import { dungeonByCode } from '../../../constants/dungeon-helpers.js';
-import { getDungeonKeyEmoji } from '../../../lib/key-emoji-helpers.js';
+import { dungeonByCode } from '../../../constants/dungeons/dungeon-helpers.js';
+import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 
 /**

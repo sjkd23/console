@@ -1,5 +1,5 @@
 import type { GuildMember } from 'discord.js';
-import { getJSON } from '../http.js';
+import { getJSON } from '../utilities/http.js';
 
 /**
  * Internal role keys (must match backend role_catalog)

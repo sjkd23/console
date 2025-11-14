@@ -6,10 +6,10 @@ import {
     EmbedBuilder,
     MessageFlags
 } from 'discord.js';
-import { getJSON } from '../../../lib/http.js';
+import { getJSON } from '../../../lib/utilities/http.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
-import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/key-emoji-helpers.js';
-import { logButtonClick } from '../../../lib/raid-logger.js';
+import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/utilities/key-emoji-helpers.js';
+import { logButtonClick } from '../../../lib/logging/raid-logger.js';
 
 /**
  * Internal function to build and show the organizer panel.
