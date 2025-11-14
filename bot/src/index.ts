@@ -49,9 +49,16 @@ import {
 } from './interactions/buttons/config/key-pop-points-config.js';
 import {
     handleGetVerified,
+    handleRealmEyeVerification,
     handleVerificationDone,
     handleVerificationCancel,
+    handleManualVerifyScreenshot,
 } from './interactions/buttons/verification/get-verified.js';
+import {
+    handleVerificationApprove,
+    handleVerificationDeny,
+    handleVerificationApproveModal,
+} from './interactions/buttons/verification/approve-deny.js';
 import { startSuspensionCleanup } from './lib/suspension-cleanup.js';
 import { startRunAutoEnd } from './lib/run-auto-end.js';
 import { syncTeamRoleForMember } from './lib/team-role-manager.js';
@@ -158,12 +165,28 @@ client.on('interactionCreate', async (interaction) => {
                 await handleGetVerified(interaction);
                 return;
             }
+            if (interaction.customId === 'verification:realmeye') {
+                await handleRealmEyeVerification(interaction);
+                return;
+            }
             if (interaction.customId === 'verification:done') {
                 await handleVerificationDone(interaction);
                 return;
             }
             if (interaction.customId === 'verification:cancel') {
                 await handleVerificationCancel(interaction);
+                return;
+            }
+            if (interaction.customId === 'verification:manual_screenshot') {
+                await handleManualVerifyScreenshot(interaction);
+                return;
+            }
+            if (interaction.customId.startsWith('verification:approve:')) {
+                await handleVerificationApprove(interaction);
+                return;
+            }
+            if (interaction.customId.startsWith('verification:deny:')) {
+                await handleVerificationDeny(interaction);
                 return;
             }
 
@@ -283,6 +306,10 @@ client.on('interactionCreate', async (interaction) => {
 
         // Handle modal submissions
         if (interaction.isModalSubmit()) {
+            if (interaction.customId.startsWith('verification:approve_modal:')) {
+                await handleVerificationApproveModal(interaction);
+                return;
+            }
             if (interaction.customId.startsWith('quota_basic_modal:')) {
                 await handleQuotaBasicModal(interaction);
                 return;

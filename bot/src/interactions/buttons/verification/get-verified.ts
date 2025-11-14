@@ -9,6 +9,7 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    EmbedBuilder,
 } from 'discord.js';
 import {
     getOrCreateSession,
@@ -22,9 +23,13 @@ import {
     createRealmEyeInstructionsEmbed,
     createRealmEyeButtons,
     createSuccessEmbed,
+    createVerificationMethodButtons,
+    createManualVerificationEmbed,
+    createVerificationTicketEmbed,
+    createVerificationTicketButtons,
     deleteSession,
 } from '../../../lib/verification.js';
-import { getJSON } from '../../../lib/http.js';
+import { getJSON, getGuildVerificationConfig, getGuildChannels } from '../../../lib/http.js';
 
 const MAX_IGN_ATTEMPTS = 3;
 const MESSAGE_COLLECT_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -81,20 +86,25 @@ export async function handleGetVerified(interaction: ButtonInteraction): Promise
         // Create or get session
         const session = await getOrCreateSession(interaction.guildId!, interaction.user.id);
 
-        // Send initial DM with Cancel button
-        const embed = createIgnRequestEmbed(interaction.guild.name);
-        const cancelButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-                .setCustomId('verification:cancel')
-                .setLabel('Cancel Verification')
-                .setEmoji('❌')
-                .setStyle(ButtonStyle.Danger)
-        );
+        // Send initial DM with options
+        const embed = new EmbedBuilder()
+            .setTitle('🎮 Verification Started')
+            .setDescription(
+                `**Server:** ${interaction.guild.name}\n\n` +
+                '**Would you like to verify through RealmEye, or send a manual verification screenshot?**\n\n' +
+                '🔄 **RealmEye** - Automatic verification by adding a code to your RealmEye profile\n' +
+                '📷 **Manual Screenshot** - Submit a screenshot showing your vault with Discord tag in chat\n\n' +
+                'Click a button below to continue.'
+            )
+            .setColor(0x00AE86)
+            .setFooter({ text: 'Choose your verification method' });
+
+        const buttons = createVerificationMethodButtons();
         
         try {
             await dmChannel.send({ 
                 embeds: [embed],
-                components: [cancelButton]
+                components: [buttons]
             });
         } catch (err) {
             await interaction.editReply(
@@ -111,8 +121,7 @@ export async function handleGetVerified(interaction: ButtonInteraction): Promise
             'If you don\'t see a message from me, please check your privacy settings.'
         );
 
-        // Start IGN collection flow in DM
-        await collectIGN(dmChannel, interaction.guildId!, interaction.user.id, interaction.guild.name, member);
+        // Don't start any collectors yet - wait for button click
     } catch (err) {
         console.error('[GetVerified] Error starting verification:', err);
         await interaction.editReply(
@@ -123,6 +132,7 @@ export async function handleGetVerified(interaction: ButtonInteraction): Promise
 
 /**
  * Collect IGN from user via DM
+ * This collector only listens for TEXT MESSAGES and will not interfere with button interactions
  */
 async function collectIGN(
     dmChannel: DMChannel,
@@ -134,7 +144,7 @@ async function collectIGN(
     let attempts = 0;
 
     const collector = dmChannel.createMessageCollector({
-        filter: (m: Message) => m.author.id === userId && !m.author.bot,
+        filter: (m: Message) => m.author.id === userId && !m.author.bot && m.type === 0, // Only text messages
         time: MESSAGE_COLLECT_TIMEOUT,
     });
 
@@ -290,7 +300,8 @@ export async function handleVerificationDone(interaction: ButtonInteraction): Pr
             guild,
             member,
             session.rotmg_ign,
-            interaction.user.id
+            interaction.user.id,
+            member // User is verifying themselves
         );
 
         // Mark session as verified
@@ -365,4 +376,254 @@ export async function handleVerificationCancel(interaction: ButtonInteraction): 
             '❌ An error occurred. Your verification session may still be active.'
         );
     }
+}
+
+/**
+ * Handle "RealmEye" button - start automatic verification via RealmEye
+ */
+export async function handleRealmEyeVerification(interaction: ButtonInteraction): Promise<void> {
+    await interaction.deferReply();
+
+    try {
+        // Get session by user ID (works in DMs)
+        const session = await getSessionByUserId(interaction.user.id);
+
+        if (!session) {
+            await interaction.editReply(
+                '❌ **Session Error**\n\n' +
+                'No active verification session found. Please restart verification from the server.'
+            );
+            return;
+        }
+
+        if (session.status !== 'pending_ign') {
+            await interaction.editReply(
+                '❌ **Invalid State**\n\n' +
+                `Your verification session is currently: ${session.status}\n` +
+                'Please restart verification if needed.'
+            );
+            return;
+        }
+
+        const guildId = session.guild_id;
+
+        // Get DM channel and guild
+        const dmChannel = await interaction.user.createDM();
+        const guild = interaction.client.guilds.cache.get(guildId);
+        if (!guild) {
+            await interaction.editReply('❌ Could not find guild. Please contact staff.');
+            return;
+        }
+
+        const member = await guild.members.fetch(interaction.user.id);
+
+        await interaction.editReply(
+            '🔄 **RealmEye Verification Selected**\n\n' +
+            'Please type your in-game name (IGN) in the next message.'
+        );
+
+        // Send IGN request
+        const embed = createIgnRequestEmbed(guild.name);
+        await dmChannel.send({ embeds: [embed] });
+
+        // Start IGN collection
+        collectIGN(dmChannel, guildId, interaction.user.id, guild.name, member);
+    } catch (err) {
+        console.error('[RealmEyeVerification] Error:', err);
+        await interaction.editReply(
+            '❌ An unexpected error occurred. Please try again or contact staff.'
+        );
+    }
+}
+
+/**
+ * Handle "Manual Verify Screenshot" button - start manual verification flow
+ */
+export async function handleManualVerifyScreenshot(interaction: ButtonInteraction): Promise<void> {
+    await interaction.deferReply();
+
+    try {
+        // Get session by user ID (works in DMs)
+        const session = await getSessionByUserId(interaction.user.id);
+
+        if (!session) {
+            await interaction.editReply(
+                '❌ **Session Error**\n\n' +
+                'No active verification session found. Please restart verification from the server.'
+            );
+            return;
+        }
+
+        // Allow switching to manual from initial state
+        if (session.status !== 'pending_ign') {
+            await interaction.editReply(
+                '❌ **Invalid State**\n\n' +
+                `Your verification session is currently: ${session.status}\n` +
+                'Please restart verification if you want to try manual verification.'
+            );
+            return;
+        }
+
+        const guildId = session.guild_id;
+
+        // Get DM channel
+        const dmChannel = await interaction.user.createDM();
+
+        // Get guild name and custom instructions
+        const guild = interaction.client.guilds.cache.get(guildId);
+        if (!guild) {
+            await interaction.editReply('❌ Could not find guild. Please contact staff.');
+            return;
+        }
+
+        // Fetch custom instructions from guild config
+        const config = await getGuildVerificationConfig(guildId);
+
+        await interaction.editReply(
+            '📷 **Manual Verification Selected**\n\n' +
+            'Please upload your screenshot as instructed.'
+        );
+
+        // Update session to manual verification mode
+        await updateSession(guildId, interaction.user.id, {
+            verification_method: 'manual',
+            status: 'pending_screenshot',
+        });
+
+        // Send screenshot instructions
+        const embed = createManualVerificationEmbed(guild.name, config.manual_verify_instructions);
+        const cancelButton = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId('verification:cancel')
+                .setLabel('Cancel')
+                .setEmoji('❌')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await dmChannel.send({
+            embeds: [embed],
+            components: [cancelButton],
+        });
+
+        // Start screenshot collection (no IGN needed)
+        collectScreenshot(dmChannel, guildId, interaction.user.id, guild.name);
+    } catch (err) {
+        console.error('[ManualVerifyScreenshot] Error:', err);
+        await interaction.editReply(
+            '❌ An unexpected error occurred. Please try again or contact staff.'
+        );
+    }
+}
+
+/**
+ * Collect screenshot from user for manual verification
+ */
+async function collectScreenshot(
+    dmChannel: DMChannel,
+    guildId: string,
+    userId: string,
+    guildName: string
+): Promise<void> {
+    const collector = dmChannel.createMessageCollector({
+        filter: (m: Message) => m.author.id === userId && !m.author.bot,
+        time: MESSAGE_COLLECT_TIMEOUT,
+    });
+
+    collector.on('collect', async (message: Message) => {
+        // Check for cancel
+        if (message.content.trim().toLowerCase() === 'cancel') {
+            collector.stop('cancelled');
+            await updateSession(guildId, userId, { status: 'cancelled' });
+            await dmChannel.send(
+                '❌ **Verification Cancelled**\n\n' +
+                'You can restart verification anytime by clicking the "Get Verified" button in the server.'
+            );
+            return;
+        }
+
+        // Check if message has an image attachment
+        const attachment = message.attachments.find(
+            att => att.contentType?.startsWith('image/')
+        );
+
+        if (!attachment) {
+            await dmChannel.send(
+                '❌ **Invalid Submission**\n\n' +
+                'Please send a valid image file (PNG, JPG, etc.).\n' +
+                'Make sure to attach the screenshot, not send text.'
+            );
+            return;
+        }
+
+        // Valid screenshot received
+        collector.stop('success');
+
+        await dmChannel.send(
+            '✅ **Screenshot Received**\n\n' +
+            'Your screenshot has been submitted for review by security+.\n' +
+            'You will receive a DM when your verification is approved or denied.\n\n' +
+            '**Note:** Security+ will provide your IGN when approving your request.'
+        );
+
+        // Update session with screenshot (no IGN yet)
+        await updateSession(guildId, userId, {
+            screenshot_url: attachment.url,
+            status: 'pending_review',
+        });
+
+        // Create ticket in manual-verification channel
+        try {
+            const { channels } = await getGuildChannels(guildId);
+            const manualVerificationChannelId = channels.manual_verification;
+
+            if (!manualVerificationChannelId) {
+                console.error('[ManualVerification] No manual-verification channel configured');
+                await dmChannel.send(
+                    '⚠️ **Configuration Error**\n\n' +
+                    'The server has not configured a manual verification channel.\n' +
+                    'Please contact a staff member.'
+                );
+                return;
+            }
+
+            const guild = dmChannel.client.guilds.cache.get(guildId);
+            if (!guild) return;
+
+            const channel = await guild.channels.fetch(manualVerificationChannelId);
+            if (!channel || !channel.isTextBased()) {
+                console.error('[ManualVerification] Invalid manual-verification channel');
+                return;
+            }
+
+            // Send ticket (no IGN yet, staff will provide it)
+            const ticketEmbed = createVerificationTicketEmbed(userId, attachment.url);
+            const ticketButtons = createVerificationTicketButtons(userId);
+
+            const ticketMessage = await channel.send({
+                embeds: [ticketEmbed],
+                components: [ticketButtons],
+            });
+
+            // Update session with ticket message ID
+            await updateSession(guildId, userId, {
+                ticket_message_id: ticketMessage.id,
+            });
+        } catch (err) {
+            console.error('[ManualVerification] Error creating ticket:', err);
+            await dmChannel.send(
+                '❌ **Error**\n\n' +
+                'Failed to create verification ticket. Please contact a staff member.'
+            );
+        }
+    });
+
+    collector.on('end', async (collected, reason) => {
+        if (reason === 'time') {
+            await dmChannel.send(
+                '⏱️ **Verification Timed Out**\n\n' +
+                'You took too long to submit your screenshot. Please click the "Get Verified" button in the server to try again.'
+            );
+            await updateSession(guildId, userId, { status: 'expired' });
+        }
+    });
 }

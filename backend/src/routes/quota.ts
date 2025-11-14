@@ -39,7 +39,7 @@ const LogRunBody = z.object({
     guildId: zSnowflake,
     runId: z.number().int().positive().optional(), // Optional if dungeonKey is provided
     dungeonKey: z.string().optional(), // Optional dungeon key - will find most recent run
-    amount: z.number().int().default(1), // Can be negative to remove quota
+    amount: z.number().int().default(1), // Amount is count of runs (integer), not points
 });
 
 /**
@@ -381,7 +381,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            required_points: z.number().int().min(0).optional(),
+            required_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Required points must have at most 2 decimal places' }
+            ),
             reset_at: z.string().optional(), // ISO timestamp YYYY-MM-DDTHH:MM:SSZ
             created_at: z.string().optional(), // ISO timestamp - for resetting quota periods
             panel_message_id: zSnowflake.nullable().optional(),
@@ -439,7 +442,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            points: z.number().int().min(0),
+            points: z.number().min(0).refine(
+                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Points must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);
@@ -637,7 +643,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            points: z.number().int().min(0),
+            points: z.number().min(0).refine(
+                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Points must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);
@@ -764,7 +773,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            points: z.number().int().min(0),
+            points: z.number().min(0).refine(
+                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Points must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);
@@ -865,7 +877,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            amount: z.number().int(), // Can be negative
+            amount: z.number().refine(
+                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Amount must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);
@@ -950,7 +965,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            amount: z.number().int(), // Can be negative
+            amount: z.number().refine(
+                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Amount must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);

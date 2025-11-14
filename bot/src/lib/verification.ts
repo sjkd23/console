@@ -17,9 +17,12 @@ import crypto from 'crypto';
 
 export type VerificationStatus = 
     | 'pending_ign' 
-    | 'pending_realmeye' 
+    | 'pending_realmeye'
+    | 'pending_screenshot'
+    | 'pending_review'
     | 'verified' 
-    | 'cancelled' 
+    | 'cancelled'
+    | 'denied'
     | 'expired';
 
 export interface VerificationSession {
@@ -28,6 +31,12 @@ export interface VerificationSession {
     rotmg_ign: string | null;
     verification_code: string | null;
     status: VerificationStatus;
+    verification_method: 'realmeye' | 'manual';
+    screenshot_url: string | null;
+    ticket_message_id: string | null;
+    reviewed_by_user_id: string | null;
+    reviewed_at: string | null;
+    denial_reason: string | null;
     created_at: string;
     updated_at: string;
     expires_at: string;
@@ -102,6 +111,11 @@ export async function updateSession(
         rotmg_ign?: string;
         verification_code?: string;
         status?: VerificationStatus;
+        verification_method?: 'realmeye' | 'manual';
+        screenshot_url?: string;
+        ticket_message_id?: string;
+        reviewed_by_user_id?: string;
+        denial_reason?: string;
     }
 ): Promise<VerificationSession> {
     return await patchJSON<VerificationSession>(
@@ -225,7 +239,8 @@ export async function applyVerification(
     guild: Guild,
     member: GuildMember,
     ign: string,
-    actorUserId: string
+    actorUserId: string,
+    actorMember?: GuildMember
 ): Promise<{
     success: boolean;
     roleApplied: boolean;
@@ -292,8 +307,12 @@ export async function applyVerification(
 
         // Call backend to record verification
         try {
+            // Get actor's roles if actorMember is provided
+            const actorRoles = actorMember ? Array.from(actorMember.roles.cache.keys()) : undefined;
+            
             await verifyRaider({
                 actor_user_id: actorUserId,
+                actor_roles: actorRoles,
                 guild_id: guild.id,
                 user_id: member.id,
                 ign,
@@ -301,6 +320,7 @@ export async function applyVerification(
         } catch (backendErr) {
             console.error('[Verification] Failed to record verification in backend:', backendErr);
             // Don't add to user-facing errors since Discord changes succeeded
+            errors.push('Verification recorded in Discord but may not be saved in database');
         }
 
         return {
@@ -344,22 +364,25 @@ export function validateIGN(ign: string): { valid: boolean; error?: string } {
 /**
  * Create the "Get Verified" panel embed
  */
-export function createVerificationPanelEmbed(): EmbedBuilder {
+export function createVerificationPanelEmbed(customMessage?: string | null): EmbedBuilder {
+    const description = 
+        '**Welcome to the verification process!**\n\n' +
+        'To participate in raids and access full server features, you need to verify your ROTMG account.\n\n' +
+        (customMessage ? `${customMessage}\n\n` : '') +
+        '**How it works:**\n' +
+        '1️⃣ Click the **"Get Verified"** button below\n' +
+        '2️⃣ Follow the instructions sent to your DMs\n' +
+        '3️⃣ You can verify automatically via RealmEye or manually with a screenshot\n' +
+        '4️⃣ Once verified, you\'ll receive the Verified Raider role!\n\n' +
+        '**Requirements:**\n' +
+        '• DMs enabled for this server\n' +
+        '• For automatic: A public RealmEye profile\n' +
+        '• For manual: A clear screenshot showing your vault and Discord tag in chat\n\n' +
+        '**Ready?** Click the button below to start!';
+
     return new EmbedBuilder()
         .setTitle('🎯 Get Verified')
-        .setDescription(
-            '**Welcome to the verification process!**\n\n' +
-            'To participate in raids and access full server features, you need to verify your ROTMG account.\n\n' +
-            '**How it works:**\n' +
-            '1️⃣ Click the **"Get Verified"** button below\n' +
-            '2️⃣ Follow the instructions sent to your DMs\n' +
-            '3️⃣ You\'ll need to add a code to your RealmEye profile description\n' +
-            '4️⃣ Once verified, you\'ll receive the Verified Raider role!\n\n' +
-            '**Requirements:**\n' +
-            '• A public RealmEye profile\n' +
-            '• DMs enabled for this server\n\n' +
-            '**Ready?** Click the button below to start!'
-        )
+        .setDescription(description)
         .setColor(0x00AE86)
         .setFooter({ text: 'Need help? Contact a staff member' });
 }
@@ -393,7 +416,7 @@ export function createIgnRequestEmbed(guildName: string): EmbedBuilder {
             '• Type your IGN in the next message'
         )
         .setColor(0x00AE86)
-        .setFooter({ text: 'You can cancel anytime by typing "cancel"' });
+        .setFooter({ text: 'Choose verification method below' });
 }
 
 /**
@@ -442,6 +465,94 @@ export function createRealmEyeButtons(): ActionRowBuilder<ButtonBuilder> {
             .setStyle(ButtonStyle.Danger)
     );
 }
+
+/**
+ * Create verification method selection buttons
+ */
+export function createVerificationMethodButtons(): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+            .setCustomId('verification:realmeye')
+            .setLabel('RealmEye')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId('verification:manual_screenshot')
+            .setLabel('Manual Screenshot')
+            .setEmoji('📷')
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+            .setCustomId('verification:cancel')
+            .setLabel('Cancel')
+            .setEmoji('❌')
+            .setStyle(ButtonStyle.Danger)
+    );
+}
+
+/**
+ * Create manual verification screenshot request embed
+ */
+export function createManualVerificationEmbed(
+    guildName: string,
+    customInstructions?: string | null
+): EmbedBuilder {
+    const defaultInstructions = 
+        '**Please send a full-screen screenshot showing:**\n\n' +
+        '1️⃣ Your vault or character selection screen\n' +
+        '2️⃣ Your Discord tag visible in the in-game chat\n' +
+        '3️⃣ Your IGN clearly visible\n\n' +
+        '**Example:** Open your vault, type your Discord tag in chat, take a screenshot, and send it here.\n\n' +
+        '⚠️ **The screenshot must be clear and unedited.**';
+
+    return new EmbedBuilder()
+        .setTitle('📷 Manual Verification - Screenshot Required')
+        .setDescription(
+            `**Server:** ${guildName}\n\n` +
+            (customInstructions || defaultInstructions)
+        )
+        .setColor(0xFFA500)
+        .setFooter({ text: 'Send your screenshot in the next message' });
+}
+
+/**
+ * Create verification ticket embed for security+ review
+ */
+export function createVerificationTicketEmbed(
+    userId: string,
+    screenshotUrl: string
+): EmbedBuilder {
+    return new EmbedBuilder()
+        .setTitle('🎫 Manual Verification Request')
+        .setDescription(
+            `**User:** <@${userId}>\n` +
+            `**User ID:** ${userId}\n\n` +
+            '**Screenshot submitted for review:**\n' +
+            '⚠️ **Staff must provide the IGN when approving**'
+        )
+        .setImage(screenshotUrl)
+        .setColor(0xFFA500)
+        .setTimestamp()
+        .setFooter({ text: 'Security+ can approve or deny this request' });
+}
+
+/**
+ * Create approve/deny buttons for verification ticket
+ */
+export function createVerificationTicketButtons(userId: string): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`verification:approve:${userId}`)
+            .setLabel('Approve')
+            .setEmoji('✅')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId(`verification:deny:${userId}`)
+            .setLabel('Deny')
+            .setEmoji('❌')
+            .setStyle(ButtonStyle.Danger)
+    );
+}
+
 
 /**
  * Create success embed after verification

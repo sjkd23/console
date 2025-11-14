@@ -115,15 +115,21 @@ export default async function raidersRoutes(app: FastifyInstance) {
         console.log(`[Verify] Actor ${actor_user_id} in guild ${guild_id} attempting to verify ${user_id}`);
         console.log(`[Verify] Actor has ${actor_roles?.length || 0} roles: ${actor_roles?.join(', ') || 'none'}`);
 
-        // Authorization: actor must have the 'security' role
-        const hasSecurity = await hasInternalRole(guild_id, actor_user_id, 'security', actor_roles);
-        if (!hasSecurity) {
-            return reply.code(403).send({
-                error: {
-                    code: 'NOT_SECURITY',
-                    message: 'You must have the Security role to verify raiders',
-                },
-            });
+        // Authorization: 
+        // - Allow self-verification (actor_user_id === user_id)
+        // - Otherwise, actor must have the 'security' role
+        const isSelfVerification = actor_user_id === user_id;
+        
+        if (!isSelfVerification) {
+            const hasSecurity = await hasInternalRole(guild_id, actor_user_id, 'security', actor_roles);
+            if (!hasSecurity) {
+                return reply.code(403).send({
+                    error: {
+                        code: 'NOT_SECURITY',
+                        message: 'You must have the Security role to verify other members',
+                    },
+                });
+            }
         }
 
         // Upsert guild

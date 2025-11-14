@@ -16,6 +16,7 @@ import {
 import { getRaiderPointsConfig, setRaiderPoints, deleteRaiderPoints, BackendError } from '../../../lib/http.js';
 import { DUNGEON_DATA } from '../../../constants/DungeonData.js';
 import { buildConfigPointsPanel } from '../../../lib/configpoints-panel.js';
+import { formatPoints } from '../../../lib/format-helpers.js';
 
 /**
  * Helper function to build the dungeon selection dropdown panel
@@ -47,7 +48,7 @@ async function buildDungeonSelectorPanel(guildId: string): Promise<{
             return {
                 label: dungeon.dungeonName,
                 value: dungeon.codeName,
-                description: points !== undefined ? `Current: ${points} pts` : 'Default: 1 pt',
+                description: points !== undefined ? `Current: ${formatPoints(points)} pts` : 'Default: 1 pt',
                 emoji: isCustom ? '⭐' : undefined,
             };
         });
@@ -187,7 +188,7 @@ export async function handlePointsSelectDungeon(interaction: StringSelectMenuInt
     } catch { }
 
     // Default is 1 if not configured
-    const displayValue = currentPoints !== undefined ? currentPoints.toString() : '1';
+    const displayValue = currentPoints !== undefined ? formatPoints(currentPoints) : '1';
 
     // Extract main panel message ID from customId if available
     const customIdParts = interaction.customId.split(':');
@@ -203,7 +204,7 @@ export async function handlePointsSelectDungeon(interaction: StringSelectMenuInt
         .setCustomId('points')
         .setLabel('Raider Point Value (default: 1)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 5')
+        .setPlaceholder('e.g., 5 or 2.25')
         .setRequired(true)
         .setValue(displayValue);
 
@@ -230,10 +231,16 @@ export async function handlePointsDungeonModal(interaction: ModalSubmitInteracti
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const points = parseInt(interaction.fields.getTextInputValue('points'), 10);
+    const points = parseFloat(interaction.fields.getTextInputValue('points'));
 
     if (isNaN(points) || points < 0) {
         await interaction.editReply('❌ Points must be a non-negative number.');
+        return;
+    }
+
+    // Check decimal places (max 2)
+    if (Math.round(points * 100) !== points * 100) {
+        await interaction.editReply('❌ Points can have at most 2 decimal places (e.g., 5.25 or 0.5).');
         return;
     }
 
@@ -255,7 +262,7 @@ export async function handlePointsDungeonModal(interaction: ModalSubmitInteracti
                 actor_has_admin_permission: hasAdminPerm,
                 points,
             });
-            await interaction.editReply(`✅ Set **${dungeonKey}** to award **${points} point${points === 1 ? '' : 's'}** to raiders`);
+            await interaction.editReply(`✅ Set **${dungeonKey}** to award **${formatPoints(points)} point${points === 1 ? '' : 's'}** to raiders`);
         }
 
         // Refresh the dropdown selector panel using webhook

@@ -15,6 +15,7 @@ import { updateQuotaPanelsForUser } from '../lib/quota-panel.js';
 import { ensureGuildContext, fetchGuildMember } from '../lib/interaction-helpers.js';
 import { formatErrorMessage } from '../lib/error-handler.js';
 import { handleDungeonAutocomplete } from '../lib/dungeon-autocomplete.js';
+import { formatPoints } from '../lib/format-helpers.js';
 
 /**
  * /logrun - Manually log run completion quota for organizers.
@@ -113,7 +114,7 @@ export const logrun: SlashCommand = {
                 .addFields(
                     { name: 'Dungeon', value: dungeon.dungeonName, inline: true },
                     { name: `Runs ${actionText}`, value: `${Math.abs(amount)}`, inline: true },
-                    { name: 'Points Changed', value: `${result.total_points > 0 ? '+' : ''}${result.total_points}`, inline: true },
+                    { name: 'Points Changed', value: `${result.total_points > 0 ? '+' : ''}${formatPoints(result.total_points)}`, inline: true },
                     { name: 'Organizer', value: `<@${result.organizer_id}>`, inline: true },
                     { name: `${actionText} By`, value: `<@${interaction.user.id}>`, inline: true },
                 )

@@ -15,6 +15,87 @@ import {
 import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, getGuildChannels, BackendError } from '../../../lib/http.js';
 import { DUNGEON_DATA } from '../../../constants/DungeonData.js';
 import { updateQuotaPanel } from '../../../lib/quota-panel.js';
+import { formatPoints } from '../../../lib/format-helpers.js';
+import { buildQuotaConfigPanel } from '../../../lib/quota-config-panel.js';
+
+/**
+ * Helper function to build the dungeon selection dropdown panel
+ */
+async function buildDungeonSelectorPanel(guildId: string, roleId: string): Promise<{
+    embed: EmbedBuilder;
+    rows: ActionRowBuilder<StringSelectMenuBuilder>[];
+}> {
+    // Fetch current overrides
+    let dungeonOverrides: Record<string, number> = {};
+    try {
+        const result = await getQuotaRoleConfig(guildId, roleId);
+        dungeonOverrides = result.dungeon_overrides;
+    } catch { }
+
+    // Split dungeons into categories
+    const exaltDungeons = DUNGEON_DATA.filter(d => d.dungeonCategory === 'Exaltation Dungeons');
+    const otherDungeons = DUNGEON_DATA.filter(d => d.dungeonCategory !== 'Exaltation Dungeons');
+
+    // Split other dungeons into two groups (25 each max)
+    const misc1Dungeons = otherDungeons.slice(0, 25);
+    const misc2Dungeons = otherDungeons.slice(25, 50);
+
+    const createOptions = (dungeons: typeof DUNGEON_DATA) =>
+        Array.from(dungeons).map(dungeon => {
+            const override = dungeonOverrides[dungeon.codeName];
+            return {
+                label: dungeon.dungeonName,
+                value: dungeon.codeName,
+                description: override ? `Current: ${formatPoints(override)} pts` : 'Default: 1 pt',
+                emoji: override ? '⭐' : undefined,
+            };
+        });
+
+    const rows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
+
+    // Exaltation dungeons dropdown
+    if (exaltDungeons.length > 0) {
+        const exaltMenu = new StringSelectMenuBuilder()
+            .setCustomId(`quota_select_dungeon_exalt:${roleId}`)
+            .setPlaceholder('Exaltation Dungeons...')
+            .addOptions(createOptions(exaltDungeons));
+        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(exaltMenu));
+    }
+
+    // Misc 1 dungeons dropdown
+    if (misc1Dungeons.length > 0) {
+        const misc1Menu = new StringSelectMenuBuilder()
+            .setCustomId(`quota_select_dungeon_misc1:${roleId}`)
+            .setPlaceholder('Other Dungeons (Part 1)...')
+            .addOptions(createOptions(misc1Dungeons));
+        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(misc1Menu));
+    }
+
+    // Misc 2 dungeons dropdown (if needed)
+    if (misc2Dungeons.length > 0) {
+        const misc2Menu = new StringSelectMenuBuilder()
+            .setCustomId(`quota_select_dungeon_misc2:${roleId}`)
+            .setPlaceholder('Other Dungeons (Part 2)...')
+            .addOptions(createOptions(misc2Dungeons));
+        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(misc2Menu));
+    }
+
+    const configuredCount = Object.values(dungeonOverrides).filter(p => p !== undefined && p !== 1).length;
+
+    const embed = new EmbedBuilder()
+        .setTitle('🗺️ Configure Dungeon Points')
+        .setDescription(
+            'Select a dungeon to set custom point values. By default, all dungeons are worth 1 point.\n\n' +
+            `⭐ = Custom override set (${configuredCount} dungeon${configuredCount === 1 ? '' : 's'})\n\n` +
+            `**Categories:**\n` +
+            `• Exaltation Dungeons (${exaltDungeons.length})\n` +
+            `• Other Dungeons Part 1 (${misc1Dungeons.length})\n` +
+            `• Other Dungeons Part 2 (${misc2Dungeons.length})`
+        )
+        .setColor(0x5865F2);
+
+    return { embed, rows };
+}
 
 /**
  * Handle quota_config_basic button
@@ -61,16 +142,16 @@ export async function handleQuotaConfigBasic(interaction: ButtonInteraction) {
     }
 
     const modal = new ModalBuilder()
-        .setCustomId(`quota_basic_modal:${roleId}`)
+        .setCustomId(`quota_basic_modal:${roleId}:${interaction.message.id}`)
         .setTitle('Configure Basic Quota Settings');
 
     const requiredPointsInput = new TextInputBuilder()
         .setCustomId('required_points')
         .setLabel('Required Points Per Period')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 10')
+        .setPlaceholder('e.g., 10 or 12.55')
         .setRequired(true)
-        .setValue(config?.required_points?.toString() || '0');
+        .setValue(config?.required_points?.toFixed(2) || '0.00');
 
     const resetAtInput = new TextInputBuilder()
         .setCustomId('reset_at')
@@ -92,7 +173,10 @@ export async function handleQuotaConfigBasic(interaction: ButtonInteraction) {
  * Handle quota_basic_modal submission
  */
 export async function handleQuotaBasicModal(interaction: ModalSubmitInteraction) {
-    const roleId = interaction.customId.split(':')[1];
+    const parts = interaction.customId.split(':');
+    const roleId = parts[1];
+    const mainPanelMessageId = parts[2];
+    
     if (!roleId) {
         await interaction.reply({ content: '❌ Invalid interaction data', flags: MessageFlags.Ephemeral });
         return;
@@ -101,12 +185,18 @@ export async function handleQuotaBasicModal(interaction: ModalSubmitInteraction)
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     // Parse inputs
-    const requiredPoints = parseInt(interaction.fields.getTextInputValue('required_points'), 10);
+    const requiredPoints = parseFloat(interaction.fields.getTextInputValue('required_points'));
     const resetAtStr = interaction.fields.getTextInputValue('reset_at').trim();
 
-    // Validate required points
+    // Validate required points (allow decimals up to 2 decimal places)
     if (isNaN(requiredPoints) || requiredPoints < 0) {
         await interaction.editReply('❌ Required points must be a non-negative number.');
+        return;
+    }
+
+    // Check decimal places (max 2)
+    if (Math.round(requiredPoints * 100) !== requiredPoints * 100) {
+        await interaction.editReply('❌ Required points can have at most 2 decimal places (e.g., 12.55).');
         return;
     }
 
@@ -149,9 +239,24 @@ export async function handleQuotaBasicModal(interaction: ModalSubmitInteraction)
 
         await interaction.editReply(
             `✅ **Quota configuration updated!**\n\n` +
-            `**Required Points:** ${requiredPoints}\n` +
+            `**Required Points:** ${formatPoints(requiredPoints)}\n` +
             `**Reset Time:** <t:${Math.floor(resetDate.getTime() / 1000)}:F> (<t:${Math.floor(resetDate.getTime() / 1000)}:R>)`
         );
+
+        // Refresh the original /configquota panel using webhook
+        if (mainPanelMessageId) {
+            try {
+                const { embed: mainEmbed, buttons: mainButtons } = await buildQuotaConfigPanel(interaction.guildId!, roleId);
+                
+                await interaction.webhook.editMessage(mainPanelMessageId, {
+                    embeds: [mainEmbed],
+                    components: [mainButtons],
+                });
+            } catch (err) {
+                console.error('Failed to refresh main quota config panel:', err);
+                // Non-critical, continue
+            }
+        }
     } catch (err) {
         console.error('Failed to update quota config:', err);
         const msg = err instanceof BackendError ? err.message : 'Unknown error';
@@ -192,77 +297,28 @@ export async function handleQuotaConfigDungeons(interaction: ButtonInteraction) 
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Fetch current overrides
-    let dungeonOverrides: Record<string, number> = {};
-    try {
-        const result = await getQuotaRoleConfig(interaction.guildId!, roleId);
-        dungeonOverrides = result.dungeon_overrides;
-    } catch { }
+    const mainPanelMessageId = interaction.message.id;
+    
+    const { embed, rows } = await buildDungeonSelectorPanel(interaction.guildId!, roleId);
 
-    // Split dungeons into categories
-    const exaltDungeons = DUNGEON_DATA.filter(d => d.dungeonCategory === 'Exaltation Dungeons');
-    const otherDungeons = DUNGEON_DATA.filter(d => d.dungeonCategory !== 'Exaltation Dungeons');
+    // Send the dropdown panel and get the message
+    const reply = await interaction.editReply({
+        embeds: [embed],
+        components: rows.slice(0, 5), // Discord max 5 action rows
+    });
 
-    // Split other dungeons into two groups (25 each max)
-    const misc1Dungeons = otherDungeons.slice(0, 25);
-    const misc2Dungeons = otherDungeons.slice(25, 50);
-
-    const createOptions = (dungeons: typeof DUNGEON_DATA) =>
-        Array.from(dungeons).map(dungeon => {
-            const override = dungeonOverrides[dungeon.codeName];
-            return {
-                label: dungeon.dungeonName,
-                value: dungeon.codeName,
-                description: override ? `Current: ${override} pts` : 'Default: 1 pt',
-                emoji: override ? '⭐' : undefined,
-            };
-        });
-
-    const rows: ActionRowBuilder<StringSelectMenuBuilder>[] = [];
-
-    // Exaltation dungeons dropdown
-    if (exaltDungeons.length > 0) {
-        const exaltMenu = new StringSelectMenuBuilder()
-            .setCustomId(`quota_select_dungeon_exalt:${roleId}`)
-            .setPlaceholder('Exaltation Dungeons...')
-            .addOptions(createOptions(exaltDungeons));
-        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(exaltMenu));
-    }
-
-    // Misc 1 dungeons dropdown
-    if (misc1Dungeons.length > 0) {
-        const misc1Menu = new StringSelectMenuBuilder()
-            .setCustomId(`quota_select_dungeon_misc1:${roleId}`)
-            .setPlaceholder('Other Dungeons (Part 1)...')
-            .addOptions(createOptions(misc1Dungeons));
-        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(misc1Menu));
-    }
-
-    // Misc 2 dungeons dropdown (if needed)
-    if (misc2Dungeons.length > 0) {
-        const misc2Menu = new StringSelectMenuBuilder()
-            .setCustomId(`quota_select_dungeon_misc2:${roleId}`)
-            .setPlaceholder('Other Dungeons (Part 2)...')
-            .addOptions(createOptions(misc2Dungeons));
-        rows.push(new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(misc2Menu));
-    }
-
-    const embed = new EmbedBuilder()
-        .setTitle('🗺️ Configure Dungeon Points')
-        .setDescription(
-            'Select a dungeon to set custom point values. By default, all dungeons are worth 1 point.\n\n' +
-            `⭐ = Custom override set\n` +
-            `Total overrides: ${Object.keys(dungeonOverrides).length}\n\n` +
-            `**Categories:**\n` +
-            `• Exaltation Dungeons (${exaltDungeons.length})\n` +
-            `• Other Dungeons Part 1 (${misc1Dungeons.length})\n` +
-            `• Other Dungeons Part 2 (${misc2Dungeons.length})`
-        )
-        .setColor(0x5865F2);
+    // Update the select menus to include the main panel message ID
+    const updatedRows = rows.slice(0, 5).map(row => {
+        const menu = row.components[0] as StringSelectMenuBuilder;
+        const currentId = menu.data.custom_id!;
+        // Append dropdown message ID and main panel message ID to custom_id
+        menu.setCustomId(`${currentId}:${reply.id}:${mainPanelMessageId}`);
+        return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+    });
 
     await interaction.editReply({
         embeds: [embed],
-        components: rows.slice(0, 5), // Discord max 5 action rows
+        components: updatedRows,
     });
 }
 
@@ -270,7 +326,10 @@ export async function handleQuotaConfigDungeons(interaction: ButtonInteraction) 
  * Handle quota_select_dungeon select menu
  */
 export async function handleQuotaSelectDungeon(interaction: StringSelectMenuInteraction) {
-    const roleId = interaction.customId.split(':')[1];
+    const customIdParts = interaction.customId.split(':');
+    const roleId = customIdParts[1];
+    const dropdownMessageId = customIdParts[2];
+    const mainPanelMessageId = customIdParts[3];
     const dungeonKey = interaction.values[0];
 
     if (!roleId || !dungeonKey) {
@@ -299,17 +358,18 @@ export async function handleQuotaSelectDungeon(interaction: StringSelectMenuInte
         currentOverride = result.dungeon_overrides[dungeonKey];
     } catch { }
 
+    // Encode both message IDs in the modal customId
     const modal = new ModalBuilder()
-        .setCustomId(`quota_dungeon_modal:${roleId}:${dungeonKey}`)
+        .setCustomId(`quota_dungeon_modal:${roleId}:${dungeonKey}:${dropdownMessageId}:${mainPanelMessageId}`)
         .setTitle(`${dungeon.dungeonName} Points`);
 
     const pointsInput = new TextInputBuilder()
         .setCustomId('points')
         .setLabel(`Point Value (0 to remove override)`)
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 2')
+        .setPlaceholder('e.g., 2.25 or 0.5')
         .setRequired(true)
-        .setValue(currentOverride?.toString() || '1');
+        .setValue(currentOverride !== undefined ? formatPoints(currentOverride) : '1');
 
     modal.addComponents(
         new ActionRowBuilder<TextInputBuilder>().addComponents(pointsInput)
@@ -325,6 +385,8 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
     const parts = interaction.customId.split(':');
     const roleId = parts[1];
     const dungeonKey = parts[2];
+    const dropdownMessageId = parts[3];
+    const mainPanelMessageId = parts[4];
 
     if (!roleId || !dungeonKey) {
         await interaction.reply({ content: '❌ Invalid interaction data', flags: MessageFlags.Ephemeral });
@@ -333,10 +395,16 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const points = parseInt(interaction.fields.getTextInputValue('points'), 10);
+    const points = parseFloat(interaction.fields.getTextInputValue('points'));
 
     if (isNaN(points) || points < 0) {
         await interaction.editReply('❌ Points must be a non-negative number.');
+        return;
+    }
+
+    // Check decimal places (max 2)
+    if (Math.round(points * 100) !== points * 100) {
+        await interaction.editReply('❌ Points can have at most 2 decimal places (e.g., 2.25 or 0.5).');
         return;
     }
 
@@ -358,7 +426,46 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
                 actor_has_admin_permission: hasAdminPerm,
                 points,
             });
-            await interaction.editReply(`✅ Set **${dungeonKey}** to **${points} point${points === 1 ? '' : 's'}**`);
+            await interaction.editReply(`✅ Set **${dungeonKey}** to **${formatPoints(points)} point${points === 1 ? '' : 's'}**`);
+        }
+
+        // Refresh the dropdown selector panel using webhook
+        if (dropdownMessageId) {
+            try {
+                const { embed, rows } = await buildDungeonSelectorPanel(interaction.guildId!, roleId);
+                
+                // Update customIds to include message IDs
+                const updatedRows = rows.slice(0, 5).map(row => {
+                    const menu = row.components[0] as StringSelectMenuBuilder;
+                    const currentId = menu.data.custom_id!;
+                    // Append dropdown message ID and main panel message ID to custom_id
+                    menu.setCustomId(`${currentId}:${dropdownMessageId}:${mainPanelMessageId}`);
+                    return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu);
+                });
+
+                await interaction.webhook.editMessage(dropdownMessageId, {
+                    embeds: [embed],
+                    components: updatedRows,
+                });
+            } catch (err) {
+                console.error('Failed to refresh dropdown selector:', err);
+                // Non-critical, continue
+            }
+        }
+
+        // Refresh the original /configquota panel using webhook
+        if (mainPanelMessageId) {
+            try {
+                const { embed: mainEmbed, buttons: mainButtons } = await buildQuotaConfigPanel(interaction.guildId!, roleId);
+                
+                await interaction.webhook.editMessage(mainPanelMessageId, {
+                    embeds: [mainEmbed],
+                    components: [mainButtons],
+                });
+            } catch (err) {
+                console.error('Failed to refresh main quota config panel:', err);
+                // Non-critical, continue
+            }
         }
     } catch (err) {
         console.error('Failed to update dungeon override:', err);

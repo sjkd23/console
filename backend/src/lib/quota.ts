@@ -52,14 +52,31 @@ export async function getQuotaRoleConfig(
     guildId: string,
     discordRoleId: string
 ): Promise<QuotaRoleConfig | null> {
-    const res = await query<QuotaRoleConfig>(
+    const res = await query<{
+        guild_id: string;
+        discord_role_id: string;
+        required_points: string; // DECIMAL comes as string from pg
+        reset_at: string;
+        panel_message_id: string | null;
+        created_at: string;
+    }>(
         `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at
          FROM quota_role_config
          WHERE guild_id = $1::bigint AND discord_role_id = $2::bigint`,
         [guildId, discordRoleId]
     );
 
-    return (res.rowCount ?? 0) > 0 ? res.rows[0] : null;
+    if ((res.rowCount ?? 0) === 0) return null;
+
+    const row = res.rows[0];
+    return {
+        guild_id: row.guild_id,
+        discord_role_id: row.discord_role_id,
+        required_points: Number(row.required_points),
+        reset_at: row.reset_at,
+        panel_message_id: row.panel_message_id,
+        created_at: row.created_at,
+    };
 }
 
 /**
@@ -68,7 +85,14 @@ export async function getQuotaRoleConfig(
 export async function getAllQuotaRoleConfigs(
     guildId: string
 ): Promise<QuotaRoleConfig[]> {
-    const res = await query<QuotaRoleConfig>(
+    const res = await query<{
+        guild_id: string;
+        discord_role_id: string;
+        required_points: string; // DECIMAL comes as string from pg
+        reset_at: string;
+        panel_message_id: string | null;
+        created_at: string;
+    }>(
         `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at
          FROM quota_role_config
          WHERE guild_id = $1::bigint
@@ -76,7 +100,14 @@ export async function getAllQuotaRoleConfigs(
         [guildId]
     );
 
-    return res.rows;
+    return res.rows.map(row => ({
+        guild_id: row.guild_id,
+        discord_role_id: row.discord_role_id,
+        required_points: Number(row.required_points),
+        reset_at: row.reset_at,
+        panel_message_id: row.panel_message_id,
+        created_at: row.created_at,
+    }));
 }
 
 /**
@@ -128,7 +159,14 @@ export async function upsertQuotaRoleConfig(
 
     const updateClause = fields.length > 0 ? `, ${fields.join(', ')}` : '';
 
-    const res = await query<QuotaRoleConfig>(
+    const res = await query<{
+        guild_id: string;
+        discord_role_id: string;
+        required_points: string; // DECIMAL comes as string from pg
+        reset_at: string;
+        panel_message_id: string | null;
+        created_at: string;
+    }>(
         `INSERT INTO quota_role_config (guild_id, discord_role_id, required_points, reset_at, created_at, updated_at)
          VALUES ($1::bigint, $2::bigint, 
                  $3, 
@@ -141,7 +179,15 @@ export async function upsertQuotaRoleConfig(
         values
     );
 
-    return res.rows[0];
+    const row = res.rows[0];
+    return {
+        guild_id: row.guild_id,
+        discord_role_id: row.discord_role_id,
+        required_points: Number(row.required_points),
+        reset_at: row.reset_at,
+        panel_message_id: row.panel_message_id,
+        created_at: row.created_at,
+    };
 }
 
 /**

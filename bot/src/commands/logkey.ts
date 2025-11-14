@@ -14,6 +14,7 @@ import { addRecentDungeon } from '../lib/dungeon-cache.js';
 import { ensureGuildContext, fetchGuildMember } from '../lib/interaction-helpers.js';
 import { formatErrorMessage } from '../lib/error-handler.js';
 import { handleDungeonAutocomplete } from '../lib/dungeon-autocomplete.js';
+import { formatPoints } from '../lib/format-helpers.js';
 
 /**
  * /logkey - Manually log key pops for raiders.
@@ -131,7 +132,7 @@ export const logkey: SlashCommand = {
             if (result.points_awarded && result.points_awarded > 0) {
                 embed.addFields({
                     name: '⭐ Points Awarded',
-                    value: `+${result.points_awarded}`,
+                    value: `+${formatPoints(result.points_awarded)}`,
                     inline: true
                 });
             }

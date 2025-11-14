@@ -15,6 +15,7 @@ import {
 import { getKeyPopPointsConfig, setKeyPopPoints, deleteKeyPopPoints, BackendError } from '../../../lib/http.js';
 import { DUNGEON_DATA } from '../../../constants/DungeonData.js';
 import { buildConfigPointsPanel } from '../../../lib/configpoints-panel.js';
+import { formatPoints } from '../../../lib/format-helpers.js';
 
 /**
  * Helper function to build the key pop dungeon selection dropdown panel
@@ -46,7 +47,7 @@ async function buildKeyPopSelectorPanel(guildId: string): Promise<{
             return {
                 label: dungeon.dungeonName,
                 value: dungeon.codeName,
-                description: points !== undefined ? `Current: ${points} pts` : 'Default: 5 pts',
+                description: points !== undefined ? `Current: ${formatPoints(points)} pts` : 'Default: 5 pts',
                 emoji: isCustom ? '🔑' : undefined,
             };
         });
@@ -185,7 +186,7 @@ export async function handleKeyPopPointsSelectDungeon(interaction: StringSelectM
     } catch { }
 
     // Default is 5 if not configured
-    const displayValue = currentPoints !== undefined ? currentPoints.toString() : '5';
+    const displayValue = currentPoints !== undefined ? formatPoints(currentPoints) : '5';
 
     // Extract main panel message ID from customId if available
     const customIdParts = interaction.customId.split(':');
@@ -201,7 +202,7 @@ export async function handleKeyPopPointsSelectDungeon(interaction: StringSelectM
         .setCustomId('points')
         .setLabel('Key Pop Point Value (default: 5)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 2')
+        .setPlaceholder('e.g., 2 or 2.50')
         .setRequired(true)
         .setValue(displayValue);
 
@@ -228,10 +229,16 @@ export async function handleKeyPopPointsDungeonModal(interaction: ModalSubmitInt
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const points = parseInt(interaction.fields.getTextInputValue('points'), 10);
+    const points = parseFloat(interaction.fields.getTextInputValue('points'));
 
     if (isNaN(points) || points < 0) {
         await interaction.editReply('❌ Points must be a non-negative number.');
+        return;
+    }
+
+    // Check decimal places (max 2)
+    if (Math.round(points * 100) !== points * 100) {
+        await interaction.editReply('❌ Points can have at most 2 decimal places (e.g., 2.50 or 0.5).');
         return;
     }
 
@@ -253,7 +260,7 @@ export async function handleKeyPopPointsDungeonModal(interaction: ModalSubmitInt
                 actor_has_admin_permission: hasAdminPerm,
                 points,
             });
-            await interaction.editReply(`✅ Set **${dungeonKey}** key pops to award **${points} point${points === 1 ? '' : 's'}** to raiders`);
+            await interaction.editReply(`✅ Set **${dungeonKey}** key pops to award **${formatPoints(points)} point${points === 1 ? '' : 's'}** to raiders`);
         }
 
         // Refresh the dropdown selector panel using webhook

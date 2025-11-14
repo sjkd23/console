@@ -9,7 +9,7 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { getGuildChannels, BackendError } from '../../lib/http.js';
+import { getGuildChannels, BackendError, getGuildVerificationConfig, updateGuildVerificationConfig } from '../../lib/http.js';
 import { hasInternalRole, getMemberRoleIds } from '../../lib/permissions/permissions.js';
 import {
     createVerificationPanelEmbed,
@@ -21,6 +21,46 @@ export const configverification: SlashCommand = {
     data: new SlashCommandBuilder()
         .setName('configverification')
         .setDescription('Manage RealmEye verification system (Moderator+)')
+        .addSubcommand(sub => 
+            sub
+                .setName('send-panel')
+                .setDescription('Send the verification panel to a channel')
+                .addChannelOption(o => 
+                    o
+                        .setName('channel')
+                        .setDescription('Channel to send panel to (uses configured get-verified channel if not specified)')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(false)
+                )
+                .addStringOption(o =>
+                    o
+                        .setName('custom_message')
+                        .setDescription('Optional custom message to include in the panel embed')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('set-panel-message')
+                .setDescription('Set custom message for the get-verified panel')
+                .addStringOption(o =>
+                    o
+                        .setName('message')
+                        .setDescription('Custom message to display in the panel embed (leave empty to clear)')
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(sub =>
+            sub
+                .setName('set-manual-instructions')
+                .setDescription('Set custom instructions for manual verification screenshot')
+                .addStringOption(o =>
+                    o
+                        .setName('instructions')
+                        .setDescription('Custom instructions with example picture info (leave empty to clear)')
+                        .setRequired(false)
+                )
+        )
         .setDMPermission(false),
 
     async run(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -50,6 +90,10 @@ export const configverification: SlashCommand = {
 
             if (subcommand === 'send-panel') {
                 await handleSendPanel(interaction, member);
+            } else if (subcommand === 'set-panel-message') {
+                await handleSetPanelMessage(interaction, member);
+            } else if (subcommand === 'set-manual-instructions') {
+                await handleSetManualInstructions(interaction, member);
             }
         } catch (unhandled) {
             console.error('[configverification] Unhandled error:', unhandled);
@@ -69,6 +113,9 @@ async function handleSendPanel(
     member: GuildMember
 ): Promise<void> {
     const guild = interaction.guild!;
+
+    // Get custom message option
+    const customMessage = interaction.options.getString('custom_message');
 
     // Get target channel (from option or config)
     let targetChannel: TextChannel | null = null;
@@ -130,7 +177,14 @@ async function handleSendPanel(
 
     // Send verification panel
     try {
-        const embed = createVerificationPanelEmbed();
+        // Get saved custom message if not provided
+        let finalCustomMessage = customMessage;
+        if (!finalCustomMessage) {
+            const config = await getGuildVerificationConfig(guild.id);
+            finalCustomMessage = config.panel_custom_message;
+        }
+
+        const embed = createVerificationPanelEmbed(finalCustomMessage);
         const button = createVerificationPanelButton();
 
         const message = await targetChannel.send({
@@ -149,6 +203,73 @@ async function handleSendPanel(
         console.error('[configverification] Error sending panel:', err);
         await interaction.editReply(
             '❌ Failed to send verification panel. Please check bot permissions and try again.'
+        );
+    }
+}
+
+async function handleSetPanelMessage(
+    interaction: ChatInputCommandInteraction,
+    member: GuildMember
+): Promise<void> {
+    const guild = interaction.guild!;
+    const message = interaction.options.getString('message') || null;
+
+    try {
+        await updateGuildVerificationConfig(guild.id, {
+            panel_custom_message: message ?? undefined,
+        });
+
+        if (message) {
+            await interaction.editReply(
+                `✅ **Panel message updated**\n\n` +
+                `**New message:**\n${message}\n\n` +
+                `This message will be included in future verification panels.\n` +
+                `Use \`/configverification send-panel\` to post an updated panel.`
+            );
+        } else {
+            await interaction.editReply(
+                `✅ **Panel message cleared**\n\n` +
+                `The custom panel message has been removed.\n` +
+                `Verification panels will use the default message.`
+            );
+        }
+    } catch (err) {
+        console.error('[configverification] Error updating panel message:', err);
+        await interaction.editReply(
+            '❌ Failed to update panel message. Please try again later.'
+        );
+    }
+}
+
+async function handleSetManualInstructions(
+    interaction: ChatInputCommandInteraction,
+    member: GuildMember
+): Promise<void> {
+    const guild = interaction.guild!;
+    const instructions = interaction.options.getString('instructions') || null;
+
+    try {
+        await updateGuildVerificationConfig(guild.id, {
+            manual_verify_instructions: instructions ?? undefined,
+        });
+
+        if (instructions) {
+            await interaction.editReply(
+                `✅ **Manual verification instructions updated**\n\n` +
+                `**New instructions:**\n${instructions}\n\n` +
+                `These instructions will be shown to users who select "Manual Verify Screenshot".`
+            );
+        } else {
+            await interaction.editReply(
+                `✅ **Manual verification instructions cleared**\n\n` +
+                `The custom instructions have been removed.\n` +
+                `Users will see the default instructions when choosing manual verification.`
+            );
+        }
+    } catch (err) {
+        console.error('[configverification] Error updating manual instructions:', err);
+        await interaction.editReply(
+            '❌ Failed to update manual instructions. Please try again later.'
         );
     }
 }

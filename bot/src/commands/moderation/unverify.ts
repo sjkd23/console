@@ -86,19 +86,18 @@ export const unverify: SlashCommand = {
             return;
         }
 
-        // Check role hierarchy
+        // Check if we can change nickname (based on role hierarchy)
+        // Allow unverification of anyone, but only change nickname if they're lower in hierarchy
+        let canChangeNickname = true;
         try {
             const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
                 allowSelf: false,
                 checkBotPosition: true
             });
-            if (!targetCheck.canTarget) {
-                await interaction.editReply(targetCheck.reason!);
-                return;
-            }
+            canChangeNickname = targetCheck.canTarget;
         } catch (hierarchyErr) {
             console.error('[Unverify] Role hierarchy check failed:', hierarchyErr);
-            // Continue anyway - don't block on hierarchy check failure
+            canChangeNickname = false;
         }
 
         try {
@@ -117,9 +116,14 @@ export const unverify: SlashCommand = {
             let nicknameRemoved = false;
             let nicknameError = '';
             try {
-                if (targetMember.nickname) {
-                    await targetMember.setNickname(null, `Unverified by ${interaction.user.tag}`);
-                    nicknameRemoved = true;
+                // Only change nickname if hierarchy allows it
+                if (canChangeNickname) {
+                    if (targetMember.nickname) {
+                        await targetMember.setNickname(null, `Unverified by ${interaction.user.tag}`);
+                        nicknameRemoved = true;
+                    }
+                } else {
+                    nicknameError = 'User has higher or equal role (hierarchy protection)';
                 }
             } catch (nickErr: any) {
                 if (nickErr?.code === 50013) {

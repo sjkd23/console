@@ -11,6 +11,7 @@ import { dungeonByCode } from '../constants/dungeon-helpers.js';
 import { DUNGEON_DATA } from '../constants/DungeonData.js';
 import { ensureGuildContext } from '../lib/interaction-helpers.js';
 import { formatErrorMessage } from '../lib/error-handler.js';
+import { formatPoints } from '../lib/format-helpers.js';
 
 /**
  * /stats - View quota statistics for yourself or another member.
@@ -51,13 +52,13 @@ export const stats: SlashCommand = {
 
             // Add Points field (for raider participation - future implementation)
             embed.addFields(
-                { name: '🎯 Points', value: `${stats.total_points}`, inline: true }
+                { name: '🎯 Points', value: `${formatPoints(stats.total_points)}`, inline: true }
             );
 
             // Add Quota Points field only if they have some (for organizers/verifiers)
             if (stats.total_quota_points > 0) {
                 embed.addFields(
-                    { name: '⭐ Quota Points', value: `${stats.total_quota_points}`, inline: true }
+                    { name: '⭐ Quota Points', value: `${formatPoints(stats.total_quota_points)}`, inline: true }
                 );
             }
 

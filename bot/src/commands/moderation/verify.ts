@@ -104,19 +104,18 @@ export const verify: SlashCommand = {
             // Continue anyway - don't block on check failure
         }
 
-        // Check role hierarchy
+        // Check if we can change nickname (based on role hierarchy)
+        // Allow verification of anyone, but only change nickname if they're lower in hierarchy
+        let canChangeNickname = true;
         try {
             const targetCheck = await canActorTargetMember(invokerMember, targetMember, {
                 allowSelf: false,
                 checkBotPosition: true
             });
-            if (!targetCheck.canTarget) {
-                await interaction.editReply(targetCheck.reason!);
-                return;
-            }
+            canChangeNickname = targetCheck.canTarget;
         } catch (hierarchyErr) {
             console.error('[Verify] Role hierarchy check failed:', hierarchyErr);
-            // Continue anyway - don't block on hierarchy check failure
+            canChangeNickname = false;
         }
 
         // Check if verified_raider role is configured
@@ -167,7 +166,13 @@ export const verify: SlashCommand = {
             let nicknameUpdated = true;
             let nicknameError = '';
             try {
-                await targetMember.setNickname(result.ign, `Verified by ${interaction.user.tag}`);
+                // Only change nickname if hierarchy allows it
+                if (canChangeNickname) {
+                    await targetMember.setNickname(result.ign, `Verified by ${interaction.user.tag}`);
+                } else {
+                    nicknameUpdated = false;
+                    nicknameError = 'User has higher or equal role (hierarchy protection)';
+                }
             } catch (nickErr: any) {
                 nicknameUpdated = false;
                 // If we can't change nickname (e.g., user has higher role or bot lacks permission), log but don't fail

@@ -5,7 +5,7 @@ import { query } from '../db/pool.js';
 import { zSnowflake } from '../lib/constants.js';
 import { Errors } from '../lib/errors.js';
 
-const SessionStatus = z.enum(['pending_ign', 'pending_realmeye', 'verified', 'cancelled', 'expired']);
+const SessionStatus = z.enum(['pending_ign', 'pending_realmeye', 'pending_screenshot', 'pending_review', 'verified', 'cancelled', 'denied', 'expired']);
 
 const CreateSessionBody = z.object({
     guild_id: zSnowflake,
@@ -16,6 +16,16 @@ const UpdateSessionBody = z.object({
     rotmg_ign: z.string().optional(),
     verification_code: z.string().optional(),
     status: SessionStatus.optional(),
+    verification_method: z.enum(['realmeye', 'manual']).optional(),
+    screenshot_url: z.string().optional(),
+    ticket_message_id: zSnowflake.optional(),
+    reviewed_by_user_id: zSnowflake.optional(),
+    denial_reason: z.string().optional(),
+});
+
+const GuildVerificationConfigBody = z.object({
+    manual_verify_instructions: z.string().optional(),
+    panel_custom_message: z.string().optional(),
 });
 
 export default async function verificationRoutes(app: FastifyInstance) {
@@ -36,13 +46,15 @@ export default async function verificationRoutes(app: FastifyInstance) {
 
         const { user_id } = parsed.data;
 
-        // Get most recent active session (not expired/cancelled/verified)
+        // Get most recent active session (not expired/cancelled/verified/denied)
         const res = await query(
             `SELECT guild_id, user_id, rotmg_ign, verification_code, status, 
+                    verification_method, screenshot_url, ticket_message_id, 
+                    reviewed_by_user_id, denial_reason,
                     created_at, updated_at, expires_at
              FROM verification_session
              WHERE user_id = $1::bigint 
-               AND status IN ('pending_ign', 'pending_realmeye')
+               AND status IN ('pending_ign', 'pending_realmeye', 'pending_screenshot', 'pending_review')
                AND expires_at > NOW()
              ORDER BY created_at DESC
              LIMIT 1`,
@@ -80,6 +92,8 @@ export default async function verificationRoutes(app: FastifyInstance) {
 
         const res = await query(
             `SELECT guild_id, user_id, rotmg_ign, verification_code, status, 
+                    verification_method, screenshot_url, ticket_message_id, 
+                    reviewed_by_user_id, denial_reason,
                     created_at, updated_at, expires_at
              FROM verification_session
              WHERE guild_id = $1::bigint AND user_id = $2::bigint`,
@@ -173,6 +187,33 @@ export default async function verificationRoutes(app: FastifyInstance) {
             values.push(updates.status);
         }
 
+        if (updates.verification_method !== undefined) {
+            setClauses.push(`verification_method = $${paramIndex++}`);
+            values.push(updates.verification_method);
+        }
+
+        if (updates.screenshot_url !== undefined) {
+            setClauses.push(`screenshot_url = $${paramIndex++}`);
+            values.push(updates.screenshot_url);
+        }
+
+        if (updates.ticket_message_id !== undefined) {
+            setClauses.push(`ticket_message_id = $${paramIndex++}::bigint`);
+            values.push(updates.ticket_message_id);
+        }
+
+        if (updates.reviewed_by_user_id !== undefined) {
+            setClauses.push(`reviewed_by_user_id = $${paramIndex++}::bigint`);
+            values.push(updates.reviewed_by_user_id);
+            // Auto-set reviewed_at when reviewer is set
+            setClauses.push(`reviewed_at = NOW()`);
+        }
+
+        if (updates.denial_reason !== undefined) {
+            setClauses.push(`denial_reason = $${paramIndex++}`);
+            values.push(updates.denial_reason);
+        }
+
         values.push(guild_id, user_id);
 
         const res = await query(
@@ -238,5 +279,92 @@ export default async function verificationRoutes(app: FastifyInstance) {
             cleaned: res.rowCount || 0,
             sessions: res.rows,
         });
+    });
+
+    /**
+     * GET /verification/config/:guild_id
+     * Get guild verification configuration
+     */
+    app.get('/verification/config/:guild_id', async (req, reply) => {
+        const Params = z.object({
+            guild_id: zSnowflake,
+        });
+        const parsed = Params.safeParse(req.params);
+
+        if (!parsed.success) {
+            return Errors.validation(reply, parsed.error.issues.map(i => i.message).join('; '));
+        }
+
+        const { guild_id } = parsed.data;
+
+        const res = await query(
+            `SELECT guild_id, manual_verify_instructions, panel_custom_message, updated_at
+             FROM guild_verification_config
+             WHERE guild_id = $1::bigint`,
+            [guild_id]
+        );
+
+        if (!res.rowCount || res.rowCount === 0) {
+            // Return default config if none exists
+            return reply.code(200).send({
+                guild_id,
+                manual_verify_instructions: null,
+                panel_custom_message: null,
+                updated_at: null,
+            });
+        }
+
+        return reply.code(200).send(res.rows[0]);
+    });
+
+    /**
+     * PUT /verification/config/:guild_id
+     * Update guild verification configuration
+     */
+    app.put('/verification/config/:guild_id', async (req, reply) => {
+        const Params = z.object({
+            guild_id: zSnowflake,
+        });
+        const p = Params.safeParse(req.params);
+        const b = GuildVerificationConfigBody.safeParse(req.body);
+
+        if (!p.success || !b.success) {
+            const msg = [...(p.error?.issues ?? []), ...(b.error?.issues ?? [])]
+                .map(i => i.message)
+                .join('; ');
+            return Errors.validation(reply, msg || 'Invalid request');
+        }
+
+        const { guild_id } = p.data;
+        const updates = b.data;
+
+        // Build upsert query
+        const res = await query(
+            `INSERT INTO guild_verification_config (
+                guild_id, 
+                manual_verify_instructions, 
+                panel_custom_message,
+                updated_at
+             )
+             VALUES (
+                $1::bigint, 
+                $2, 
+                $3,
+                NOW()
+             )
+             ON CONFLICT (guild_id)
+             DO UPDATE SET
+                manual_verify_instructions = COALESCE($2, guild_verification_config.manual_verify_instructions),
+                panel_custom_message = COALESCE($3, guild_verification_config.panel_custom_message),
+                updated_at = NOW()
+             RETURNING guild_id, manual_verify_instructions, panel_custom_message, updated_at`,
+            [
+                guild_id,
+                updates.manual_verify_instructions ?? null,
+                updates.panel_custom_message ?? null,
+            ]
+        );
+
+        return reply.code(200).send(res.rows[0]);
     });
 }

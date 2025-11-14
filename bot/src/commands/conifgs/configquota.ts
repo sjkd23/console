@@ -1,17 +1,11 @@
 import {
     SlashCommandBuilder,
     ChatInputCommandInteraction,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
     MessageFlags,
-    PermissionFlagsBits,
-    GuildMember,
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
-import { getQuotaRoleConfig, BackendError } from '../../lib/http.js';
-import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
+import { BackendError } from '../../lib/http.js';
+import { buildQuotaConfigPanel } from '../../lib/quota-config-panel.js';
 
 /**
  * /configquota - Configure quota settings for a specific role
@@ -53,95 +47,8 @@ export const configquota: SlashCommand = {
                 return;
             }
 
-            // Fetch current config from backend
-            let config: any = null;
-            let dungeonOverrides: Record<string, number> = {};
-            
-            try {
-                const result = await getQuotaRoleConfig(interaction.guildId!, role.id);
-                config = result.config;
-                dungeonOverrides = result.dungeon_overrides;
-            } catch (err) {
-                if (err instanceof BackendError && err.status === 404) {
-                    // No config exists yet - that's okay, we'll create one
-                } else {
-                    throw err;
-                }
-            }
-
-            // Build config panel embed
-            const embed = new EmbedBuilder()
-                .setTitle(`📊 Quota Configuration: ${role.name}`)
-                .setDescription(`Configure quota settings for members with the <@&${role.id}> role.`)
-                .setColor(role.color || 0x5865F2)
-                .setTimestamp();
-
-            if (config) {
-                const resetDate = new Date(config.reset_at);
-                const resetTimestamp = Math.floor(resetDate.getTime() / 1000);
-                
-                embed.addFields(
-                    { name: '🎯 Required Points', value: config.required_points.toString(), inline: true },
-                    { name: '📅 Resets', value: `<t:${resetTimestamp}:F>\n(<t:${resetTimestamp}:R>)`, inline: true }
-                );
-
-                // Show dungeon overrides if any
-                if (Object.keys(dungeonOverrides).length > 0) {
-                    const overrideList = Object.entries(dungeonOverrides)
-                        .sort(([, a], [, b]) => b - a)
-                        .slice(0, 10)
-                        .map(([key, pts]) => `${key}: ${pts} pts`)
-                        .join('\n');
-                    
-                    embed.addFields({
-                        name: '⚙️ Dungeon Point Overrides',
-                        value: overrideList || 'None',
-                        inline: false
-                    });
-
-                    if (Object.keys(dungeonOverrides).length > 10) {
-                        embed.setFooter({ text: `... and ${Object.keys(dungeonOverrides).length - 10} more overrides` });
-                    }
-                }
-            } else {
-                embed.addFields({
-                    name: 'ℹ️ Status',
-                    value: 'No configuration found. Click the buttons below to set up quota tracking for this role.',
-                    inline: false
-                });
-            }
-
-            // Build action buttons
-            const buttons = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`quota_config_basic:${role.id}:${interaction.user.id}`)
-                        .setLabel('Set Basic Config')
-                        .setStyle(ButtonStyle.Primary)
-                        .setEmoji('⚙️'),
-                    new ButtonBuilder()
-                        .setCustomId(`quota_config_dungeons:${role.id}:${interaction.user.id}`)
-                        .setLabel('Configure Dungeons')
-                        .setStyle(ButtonStyle.Secondary)
-                        .setEmoji('🗺️'),
-                    new ButtonBuilder()
-                        .setCustomId(`quota_refresh_panel:${role.id}:${interaction.user.id}`)
-                        .setLabel('Update Panel')
-                        .setStyle(ButtonStyle.Success)
-                        .setEmoji('🔄')
-                        .setDisabled(!config), // Only enable if config exists
-                    new ButtonBuilder()
-                        .setCustomId(`quota_reset_panel:${role.id}:${interaction.user.id}`)
-                        .setLabel('Reset Panel')
-                        .setStyle(ButtonStyle.Danger)
-                        .setEmoji('🔁')
-                        .setDisabled(!config), // Only enable if config exists
-                    new ButtonBuilder()
-                        .setCustomId(`quota_config_stop:${role.id}:${interaction.user.id}`)
-                        .setLabel('Stop')
-                        .setStyle(ButtonStyle.Danger)
-                        .setEmoji('🛑')
-                );
+            // Build config panel using helper function
+            const { embed, buttons } = await buildQuotaConfigPanel(interaction.guildId!, role.id, interaction.user.id);
 
             await interaction.editReply({
                 embeds: [embed],

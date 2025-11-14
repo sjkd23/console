@@ -592,3 +592,36 @@ export async function getUserNotes(
 }> {
     return getJSON(`/notes/user/${guildId}/${userId}`);
 }
+
+/** Get guild verification config (GET /verification/config/:guild_id) */
+export async function getGuildVerificationConfig(
+    guildId: string
+): Promise<{
+    guild_id: string;
+    manual_verify_instructions: string | null;
+    panel_custom_message: string | null;
+    updated_at: string | null;
+}> {
+    return getJSON(`/verification/config/${guildId}`);
+}
+
+/** Update guild verification config (PUT /verification/config/:guild_id) */
+export async function updateGuildVerificationConfig(
+    guildId: string,
+    config: {
+        manual_verify_instructions?: string;
+        panel_custom_message?: string;
+    }
+): Promise<{
+    guild_id: string;
+    manual_verify_instructions: string | null;
+    panel_custom_message: string | null;
+    updated_at: string;
+}> {
+    const res = await fetch(`${BASE}/verification/config/${guildId}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(config),
+    });
+    return handle(res);
+}

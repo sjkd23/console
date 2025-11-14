@@ -6,6 +6,7 @@ import {
     ButtonStyle,
 } from 'discord.js';
 import { getRaiderPointsConfig, getKeyPopPointsConfig, BackendError } from './http.js';
+import { formatPoints } from './format-helpers.js';
 
 /**
  * Build the /configpoints main panel embed and buttons
@@ -61,7 +62,7 @@ export async function buildConfigPointsPanel(guildId: string, userId?: string): 
         .filter(([, pts]) => pts !== 1) // Only show non-default configs
         .sort(([, a], [, b]) => b - a) // Sort by points descending
         .slice(0, 10) // Limit to 10 for cleaner display
-        .map(([key, pts]) => `**${key}**: ${pts} pts`)
+        .map(([key, pts]) => `**${key}**: ${formatPoints(pts)} pts`)
         .join('\n');
 
     const dungeonConfigCount = Object.values(dungeonPoints).filter(p => p !== 1).length;
@@ -85,7 +86,7 @@ export async function buildConfigPointsPanel(guildId: string, userId?: string): 
         .filter(([, pts]) => pts !== 5) // Only show non-default configs
         .sort(([, a], [, b]) => b - a) // Sort by points descending
         .slice(0, 10) // Limit to 10 for cleaner display
-        .map(([key, pts]) => `**${key}**: ${pts} pts`)
+        .map(([key, pts]) => `**${key}**: ${formatPoints(pts)} pts`)
         .join('\n');
 
     const keyConfigCount = Object.values(keyPopPoints).filter(p => p !== 5).length;

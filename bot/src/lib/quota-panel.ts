@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { getQuotaLeaderboard, getGuildChannels, updateQuotaRoleConfig, getJSON } from './http.js';
 import { createLogger } from './logger.js';
+import { formatPoints } from './format-helpers.js';
 
 const logger = createLogger('QuotaPanel');
 
@@ -145,7 +146,7 @@ function buildLeaderboardEmbed(
     const embed = new EmbedBuilder()
         .setTitle(`📊 ${roleName} Quota Leaderboard`)
         .setDescription(
-            `**Required Points:** ${requiredPoints}\n` +
+            `**Required Points:** ${formatPoints(requiredPoints)}\n` +
             `**Start:** <t:${startTimestamp}:f>\n` +
             `**End:** <t:${endTimestamp}:f> (<t:${endTimestamp}:R>)`
         )
@@ -166,7 +167,7 @@ function buildLeaderboardEmbed(
                 const position = index + 1;
                 const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `${position}.`;
                 const metQuota = entry.points >= requiredPoints ? '✅' : '';
-                return `${emoji} <@${entry.user_id}> - **${entry.points}** pts (${entry.runs} runs) ${metQuota}`;
+                return `${emoji} <@${entry.user_id}> - **${formatPoints(entry.points)}** pts (${entry.runs} runs) ${metQuota}`;
             })
             .join('\n');
 
