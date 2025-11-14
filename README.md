@@ -1,9 +1,9 @@
 # ROTMG Raid Bot - Complete Documentation
 
-A comprehensive Discord bot system for organizing and managing Realm of the Mad God (ROTMG) dungeon raids. Built with Discord.js (bot) and Fastify (backend API), backed by PostgreSQL, featuring role-based permissions, punishment tracking, automated RealmEye verification, raider/organizer points system, quota tracking, key pop logging, and staff notes.
+A comprehensive Discord bot system for organizing and managing Realm of the Mad God (ROTMG) dungeon raids. Built with Discord.js (bot) and Fastify (backend API), backed by PostgreSQL, featuring role-based permissions, punishment tracking, automated & manual verification systems, raider/organizer points system with decimal support, quota tracking, key pop logging, staff notes, and headcount panels.
 
-**Version:** 0.2.0  
-**Last Updated:** November 13, 2025  
+**Version:** 0.3.0  
+**Last Updated:** November 14, 2025  
 **Status:** ✅ Production Ready
 
 ---
@@ -40,13 +40,14 @@ A comprehensive Discord bot system for organizing and managing Realm of the Mad 
 │  ─────────────────────────────────────  │
 │  • Role-Based Authorization             │
 │  • Run Management (CRUD)                │
-│  • Raider Verification                  │
+│  • Raider Verification (Auto & Manual)  │
 │  • Punishment System                    │
 │  • Quota Tracking & Leaderboards        │
 │  • Raider Points Configuration          │
 │  • Key Pop Tracking & Points            │
 │  • Staff Notes System                   │
 │  • RealmEye Verification Sessions       │
+│  • Manual Verification Tickets          │
 │  • Guild Configuration                  │
 └────────┬────────────────────────────────┘
          │
@@ -234,7 +235,10 @@ rotmg-raid-bot/
 │       │       ├── 024_key_pop_points_config.sql # Points for key pops
 │       │       ├── 025_notes.sql            # Staff notes system
 │       │       ├── 026_verification_sessions.sql # RealmEye verification flow
-│       │       └── 027_command_log.sql      # Command execution logging
+│       │       ├── 027_command_log.sql      # Command execution logging
+│       │       ├── 028_decimal_quota_points.sql # Decimal point support (0.5, 1.25, etc.)
+│       │       ├── 029_manual_verification.sql # Manual verification system with tickets
+│       │       └── 030_bot_log_channel.sql  # Bot log channel mapping
 │       │
 │       ├── lib/
 │       │   ├── authorization.ts       # ✅ Role-based authorization checks
@@ -331,7 +335,8 @@ rotmg-raid-bot/
         │       │   ├── headcount-convert.ts    # ✅ Convert headcount to run
         │       │   └── headcount-end.ts        # ✅ End/delete headcount
         │       └── verification/      # Verification button handlers
-        │           └── get-verified.ts         # ✅ RealmEye verification flow initiation
+        │           ├── get-verified.ts         # ✅ RealmEye & manual verification flow initiation
+        │           └── approve-deny.ts         # ✅ Manual verification ticket review (Security+)
         │
         ├── services/                  # External service integrations
         │   └── realmeye/
@@ -516,10 +521,13 @@ rotmg-raid-bot/
   - Role hierarchy checks to prevent abuse
 - ✅ `/unverify` - Remove verification status from member
 - ✅ `/editname` - Update verified member's IGN
-- ✅ `/configverification` - Send RealmEye verification panel (Moderator+ role)
+- ✅ `/configverification` - Send verification panel (Moderator+ role)
   - Send interactive verification panel to get-verified channel
-  - Enables automated RealmEye-based verification flow
-  - Users click button → DM flow → verify via RealmEye
+  - Supports both RealmEye and manual screenshot verification
+  - **RealmEye**: Automated DM flow → verify via RealmEye profile code
+  - **Manual Screenshot**: User uploads screenshot → ticket system → Security+ review
+  - Configure custom instructions for manual verification
+  - Configure custom panel message per guild
 
 **Moderation System**
 - ✅ `/warn` - Issue warning to member with reason (Security+ role)
@@ -549,7 +557,8 @@ rotmg-raid-bot/
   - Supports 9 internal roles (including team)
 - ✅ `/setchannels` - Configure guild channel mappings
   - Maps internal channels to Discord channels
-  - Used for logging (veri_log, punishment_log, raid_log, quota, getverified)
+  - Channels: raid, veri_log, punishment_log, raid_log, quota, getverified, manual_verification, bot_log
+  - Used for logging and interactive panels
 - ✅ `/configquota <role>` - Configure quota settings for a specific role
   - Set required points per quota period
   - Configure reset schedule (absolute datetime)
@@ -673,12 +682,18 @@ rotmg-raid-bot/
 
 - ✅ Automated verification flow via DMs
 - ✅ Interactive "Get Verified" button in configured channel
-- ✅ Multi-step verification: IGN → RealmEye code → verification
+- ✅ Two verification methods:
+  - **RealmEye**: Multi-step flow → IGN → RealmEye code → automatic verification
+  - **Manual Screenshot**: User uploads vault screenshot with Discord tag → ticket system for Security+ review
 - ✅ Session management with 1-hour timeout
 - ✅ Automatic role assignment and nickname setting
 - ✅ IGN conflict detection and validation
 - ✅ Manual verification override via `/verify` command
-- ✅ Configurable get-verified channel via `/setchannels`
+- ✅ Configurable channels via `/setchannels` (getverified, manual_verification)
+- ✅ Custom instructions for manual verification per guild
+- ✅ Ticket-based review system with approve/deny buttons (Security+ only)
+- ✅ Denial reasons tracked and communicated to users
+- ✅ Full audit trail for all verification attempts
 
 **Staff Notes System**
 
@@ -864,6 +879,8 @@ Run `/setchannels` to set up logging channels:
   raid_log: #raid-logs                # Where raid event threads are created
   quota: #quota-leaderboards          # Where quota leaderboards are displayed
   getverified: #get-verified          # Where verification panel is posted
+  manual_verification: #manual-verify # Where manual verification tickets are posted
+  bot_log: #bot-activity              # General bot command logging
 ```
 
 ### 3. Configure Quota (Optional)
@@ -1535,7 +1552,8 @@ Shows paginated list of all punishments for the user (active and removed).
 
 - 🟢 **Core Functionality**: Fully working
   - ✅ Run management (create, start, end, auto-end)
-  - ✅ Raider verification with IGN management
+  - ✅ Raider verification with IGN management (automated & manual)
+  - ✅ Dual verification methods (RealmEye + manual screenshot)
   - ✅ Punishment system (warnings, suspensions with auto-expiry)
   - ✅ Role-based permission system
   - ✅ Guild configuration (roles, channels)
@@ -1543,9 +1561,17 @@ Shows paginated list of all punishments for the user (active and removed).
 - 🟢 **Quota System**: Production ready
   - ✅ Automatic tracking for organizers and verifiers
   - ✅ Configurable point values per dungeon per role
+  - ✅ Decimal point support (0.5, 1.25, etc.)
   - ✅ Real-time leaderboard panels
   - ✅ Manual logging and adjustments
   - ✅ Statistics view for all members
+
+- 🟢 **Verification System**: Production ready
+  - ✅ RealmEye automated verification
+  - ✅ Manual screenshot verification with ticket system
+  - ✅ Security+ approval workflow
+  - ✅ Custom instructions per guild
+  - ✅ Full audit trail
 
 - � **Team Role Management**: Production ready
   - ✅ Auto-assignment on role changes
@@ -1565,7 +1591,32 @@ Shows paginated list of all punishments for the user (active and removed).
 
 ---
 
-## ✨ Recently Added Features (v0.2.0)
+## ✨ Recently Added Features (v0.3.0)
+
+### Manual Verification System
+- **Dual verification methods** - Users can choose between RealmEye or manual screenshot verification
+- **Ticket-based review** - Manual verifications create tickets in manual_verification channel
+- **Security+ approval** - Staff can approve or deny with reasons
+- **Custom instructions** - Configure guild-specific instructions for screenshot requirements
+- **Full audit trail** - Track all verification attempts, denials, and approvals
+- **DM notifications** - Users receive DMs about verification status
+- **Session management** - Extends existing verification session system
+- **Screenshot storage** - Links to uploaded screenshots preserved in tickets
+
+### Decimal Point Support
+- **Fractional points** - Award 0.5, 1.25, 2.75, etc. points for quota and raider participation
+- **Precise tracking** - Up to 2 decimal places supported (DECIMAL(10,2))
+- **All point systems** - Applies to quota points, raider points, and key pop points
+- **Backward compatible** - Integer values still work perfectly
+- **Flexible configuration** - Set any decimal value in `/configquota`, `/configpoints`, etc.
+
+### Bot Log Channel
+- **General logging** - New channel type for non-specific bot activity
+- **Command execution** - Optional logging of command usage to dedicated channel
+- **Configurable via `/setchannels`** - Add `bot_log` channel to your guild
+- **Centralized activity** - Track bot actions that don't fit other log categories
+
+### Previous Features (v0.2.0)
 
 ### Headcount System
 - **Lightweight interest gauging** - `/headcount` command creates panels to see who's interested in upcoming runs
@@ -1627,7 +1678,7 @@ Shows paginated list of all punishments for the user (active and removed).
 - **Shared utilities** - `interaction-helpers.ts`, `error-handler.ts`, `embed-builders.ts` for code reusability
 - **Permission helpers** - Centralized permission checking with `command-middleware.ts`
 - **Structured logging** - Logger utilities in both backend and bot for better debugging
-- **Database migrations** - 27 total migrations (001-027) for complete schema evolution
+- **Database migrations** - 30 total migrations (001-030) for complete schema evolution
 - **RealmEye service** - Dedicated service module for RealmEye API integration with README documentation
 
 ---
