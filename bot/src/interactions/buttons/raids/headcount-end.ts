@@ -12,9 +12,26 @@ import { getOrganizerId } from '../../../lib/state/headcount-state.js';
 import { clearKeyOffers } from './headcount-key.js';
 import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/logging/raid-logger.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
+import { withButtonLock, getHeadcountLockKey } from '../../../lib/utilities/button-mutex.js';
 
 export async function handleHeadcountEnd(btn: ButtonInteraction, publicMessageId: string) {
     await btn.deferUpdate();
+
+    // CRITICAL: Wrap in mutex to prevent concurrent ending
+    const executed = await withButtonLock(btn, getHeadcountLockKey('end', publicMessageId), async () => {
+        await handleHeadcountEndInternal(btn, publicMessageId);
+    });
+
+    if (!executed) {
+        // Lock was not acquired, user was already notified
+        return;
+    }
+}
+
+/**
+ * Internal handler for headcount ending (protected by mutex).
+ */
+async function handleHeadcountEndInternal(btn: ButtonInteraction, publicMessageId: string) {
 
     // Fetch the public headcount message
     if (!btn.channel || btn.channel.type !== ChannelType.GuildText) {

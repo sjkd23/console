@@ -21,6 +21,7 @@ const ROLE_KEYS = [
     'team',
     'verified_raider',
     'suspended',
+    'muted',
 ] as const;
 
 const zRoleKey = z.enum(ROLE_KEYS);

@@ -1,6 +1,7 @@
 import { REST, Routes } from 'discord.js';
 import type { SlashCommand } from './_types.js';
 import { withPermissionCheck } from '../lib/permissions/command-middleware.js';
+import { withRateLimit } from '../lib/utilities/rate-limit-middleware.js';
 import { runCreate } from './organizer/run.js';
 import { verify } from './moderation/security/verify.js';
 import { setroles } from './conifgs/setroles.js';
@@ -10,7 +11,7 @@ import { unverify } from './moderation/security/unverify.js';
 import { warn } from './moderation/security/warn.js';
 import { suspend } from './moderation/security/suspend.js';
 import { unsuspend } from './moderation/security/unsuspend.js';
-import { removepunishment } from './moderation/officer/removepunishment.js';
+import { removepunishment } from './moderation/security/removepunishment.js';
 import { checkpunishments } from './moderation/security/checkpunishments.js';
 import { addnote } from './moderation/security/addnote.js';
 import { logrun } from './organizer/logrun.js';
@@ -26,40 +27,66 @@ import { ping } from './ping.js';
 import { addquotapoints } from './moderation/officer/addquotapoints.js';
 import { addpoints } from './moderation/officer/addpoints.js';
 import { addrole } from './moderation/officer/addrole.js';
+import { kick } from './moderation/officer/kick.js';
+import { ban } from './moderation/officer/ban.js';
+import { unban } from './moderation/officer/unban.js';
+import { softban } from './moderation/officer/softban.js';
+import { mute } from './moderation/security/mute.js';
+import { unmute } from './moderation/security/unmute.js';
 import { headcount } from './organizer/headcount.js';
 import { leaderboard } from './leaderboard.js';
 import { purge } from './moderation/moderator/purge.js';
+import { modmail } from './moderation/modmail.js';
+import { modmailreply } from './moderation/modmailreply.js';
+import { modmailblacklist } from './moderation/modmailblacklist.js';
+import { modmailunblacklist } from './moderation/modmailunblacklist.js';
 
-// Apply permission middleware to all commands
+/**
+ * Helper to apply both permission checks and rate limiting to a command.
+ * Order matters: permission check first, then rate limit (no point rate limiting unauthorized users).
+ */
+const withMiddleware = (cmd: SlashCommand) => withRateLimit(withPermissionCheck(cmd));
+
+// Apply permission middleware and rate limiting to all commands
 export const commands: SlashCommand[] = [
-    withPermissionCheck(runCreate),
-    withPermissionCheck(headcount),
-    withPermissionCheck(verify),
-    withPermissionCheck(setroles),
-    withPermissionCheck(setchannels),
-    withPermissionCheck(editname),
-    withPermissionCheck(unverify),
-    withPermissionCheck(warn),
-    withPermissionCheck(suspend),
-    withPermissionCheck(unsuspend),
-    withPermissionCheck(removepunishment),
-    withPermissionCheck(checkpunishments),
-    withPermissionCheck(addnote),
-    withPermissionCheck(logrun),
-    withPermissionCheck(logkey),
-    withPermissionCheck(stats),
-    withPermissionCheck(syncteam),
-    withPermissionCheck(configquota),
-    withPermissionCheck(configpoints),
-    withPermissionCheck(configverification),
-    withPermissionCheck(configrolepings),
-    withPermissionCheck(help),
-    withPermissionCheck(ping),
-    withPermissionCheck(addquotapoints),
-    withPermissionCheck(addpoints),
-    withPermissionCheck(addrole),
-    withPermissionCheck(leaderboard),
-    withPermissionCheck(purge),
+    withMiddleware(runCreate),
+    withMiddleware(headcount),
+    withMiddleware(verify),
+    withMiddleware(setroles),
+    withMiddleware(setchannels),
+    withMiddleware(editname),
+    withMiddleware(unverify),
+    withMiddleware(warn),
+    withMiddleware(suspend),
+    withMiddleware(unsuspend),
+    withMiddleware(removepunishment),
+    withMiddleware(checkpunishments),
+    withMiddleware(addnote),
+    withMiddleware(logrun),
+    withMiddleware(logkey),
+    withMiddleware(stats),
+    withMiddleware(syncteam),
+    withMiddleware(configquota),
+    withMiddleware(configpoints),
+    withMiddleware(configverification),
+    withMiddleware(configrolepings),
+    withMiddleware(help),
+    withMiddleware(ping),
+    withMiddleware(addquotapoints),
+    withMiddleware(addpoints),
+    withMiddleware(addrole),
+    withMiddleware(kick),
+    withMiddleware(ban),
+    withMiddleware(unban),
+    withMiddleware(softban),
+    withMiddleware(mute),
+    withMiddleware(unmute),
+    withMiddleware(leaderboard),
+    withMiddleware(purge),
+    withMiddleware(modmail),
+    withMiddleware(modmailreply),
+    withMiddleware(modmailblacklist),
+    withMiddleware(modmailunblacklist),
 ];
 
 export function toJSON() {

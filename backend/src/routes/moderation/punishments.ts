@@ -6,7 +6,7 @@ import { query } from '../../db/pool.js';
 import { zSnowflake } from '../../lib/constants/constants.js';
 import { Errors } from '../../lib/errors/errors.js';
 import { logAudit } from '../../lib/logging/audit.js';
-import { hasSecurity } from '../../lib/permissions/permissions.js';
+import { hasSecurity, hasOfficer } from '../../lib/permissions/permissions.js';
 import { ensureMemberExists } from '../../lib/database/database-helpers.js';
 
 /**
@@ -16,9 +16,9 @@ const CreatePunishmentBody = z.object({
     actor_user_id: zSnowflake,
     guild_id: zSnowflake,
     user_id: zSnowflake,
-    type: z.enum(['warn', 'suspend']),
+    type: z.enum(['warn', 'suspend', 'mute']),
     reason: z.string().min(1).max(500),
-    duration_minutes: z.number().int().positive().optional(), // Only for suspensions
+    duration_minutes: z.number().int().positive().optional(), // Only for suspensions and mutes
     actor_roles: z.array(zSnowflake).optional(),
 });
 
@@ -29,6 +29,7 @@ const RemovePunishmentBody = z.object({
     actor_user_id: zSnowflake,
     removal_reason: z.string().min(1).max(500),
     actor_roles: z.array(zSnowflake).optional(),
+    actor_has_admin: z.boolean().optional(),
 });
 
 /**
@@ -58,20 +59,20 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
 
         const { actor_user_id, guild_id, user_id, type, reason, duration_minutes, actor_roles } = parsed.data;
 
-        // Authorization check
+        // Authorization check - all punishment types now require security+ permission
         const authorized = await hasSecurity(guild_id, actor_roles);
         if (!authorized) {
             console.log(`[Punishments] User ${actor_user_id} in guild ${guild_id} denied - not security`);
             return Errors.notSecurity(reply);
         }
 
-        // Validate duration for suspensions
-        if (type === 'suspend' && !duration_minutes) {
-            return Errors.validation(reply, 'Suspensions require a duration_minutes value');
+        // Validate duration for suspensions and mutes
+        if ((type === 'suspend' || type === 'mute') && !duration_minutes) {
+            return Errors.validation(reply, `${type === 'suspend' ? 'Suspensions' : 'Mutes'} require a duration_minutes value`);
         }
 
-        // Calculate expiration for suspensions
-        const expiresAt = type === 'suspend' && duration_minutes
+        // Calculate expiration for suspensions and mutes
+        const expiresAt = (type === 'suspend' || type === 'mute') && duration_minutes
             ? new Date(Date.now() + duration_minutes * 60 * 1000).toISOString()
             : null;
 
@@ -375,7 +376,7 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
         }
 
         const { id } = p.data;
-        const { actor_user_id, removal_reason, actor_roles } = b.data;
+        const { actor_user_id, removal_reason, actor_roles, actor_has_admin } = b.data;
 
         try {
             // Get the punishment first
@@ -395,12 +396,8 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
 
             const punishment = checkResult.rows[0];
 
-            if (!punishment.active) {
-                return Errors.validation(reply, 'Punishment is already inactive');
-            }
-
             // Authorization check
-            const authorized = await hasSecurity(punishment.guild_id, actor_roles);
+            const authorized = await hasSecurity(punishment.guild_id, actor_roles, actor_has_admin);
             if (!authorized) {
                 console.log(`[Punishments] User ${actor_user_id} denied removal - not security`);
                 return Errors.notSecurity(reply);

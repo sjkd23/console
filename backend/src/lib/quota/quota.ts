@@ -172,6 +172,16 @@ export async function upsertQuotaRoleConfig(
 
     const updateClause = fields.length > 0 ? `, ${fields.join(', ')}` : '';
 
+    // CRITICAL: First, try to get the existing config to preserve created_at
+    // This prevents accidentally resetting the quota period when only updating panel_message_id
+    const existing = await getQuotaRoleConfig(guildId, discordRoleId);
+    
+    // If we have an existing config and created_at is not being explicitly set, preserve it
+    if (existing && config.created_at === undefined) {
+        // Override the createdAt value with the preserved one
+        values[4] = existing.created_at; // $5 position
+    }
+
     const res = await query<{
         guild_id: string;
         discord_role_id: string;
@@ -794,31 +804,25 @@ export async function getQuotaLeaderboard(
         periodEnd: periodEnd.toISOString()
     }, 'Querying quota leaderboard');
 
+    // Use UNNEST to include all members, even those with 0 points
+    // This ensures the leaderboard shows everyone with the role, not just those with activity
     const res = await query<{ actor_user_id: string; total_points: string; run_count: string }>(
-        `SELECT actor_user_id, 
-                COALESCE(SUM(quota_points), 0)::text AS total_points,
-                COUNT(CASE WHEN action_type = 'run_completed' THEN 1 END)::text AS run_count
-         FROM quota_event
-         WHERE guild_id = $1::bigint 
-           AND actor_user_id = ANY($2::bigint[])
-           AND created_at >= $3
-           AND created_at < $4
-         GROUP BY actor_user_id
-         ORDER BY total_points DESC, run_count DESC
+        `SELECT members.user_id::text AS actor_user_id,
+                COALESCE(SUM(qe.quota_points), 0)::text AS total_points,
+                COALESCE(COUNT(qe.id) FILTER (WHERE qe.action_type = 'run_completed'), 0)::text AS run_count
+         FROM UNNEST($2::bigint[]) AS members(user_id)
+         LEFT JOIN quota_event qe ON qe.guild_id = $1::bigint 
+                                  AND qe.actor_user_id = members.user_id
+                                  AND qe.created_at >= $3
+                                  AND qe.created_at < $4
+         GROUP BY members.user_id
+         ORDER BY COALESCE(SUM(qe.quota_points), 0) DESC, 
+                  COALESCE(COUNT(qe.id) FILTER (WHERE qe.action_type = 'run_completed'), 0) DESC
          LIMIT 50`,
         [guildId, memberUserIds, periodStart.toISOString(), periodEnd.toISOString()]
     );
 
-    logger.debug({ guildId, rowCount: res.rowCount }, 'Quota leaderboard query completed');
-
-    if (res.rowCount === 0) {
-        logger.debug({ guildId }, 'No quota events found in period - checking all-time events');
-        const checkRes = await query(
-            `SELECT COUNT(*) as count FROM quota_event WHERE guild_id = $1::bigint AND actor_user_id = ANY($2::bigint[])`,
-            [guildId, memberUserIds]
-        );
-        logger.debug({ guildId, totalEvents: checkRes.rows[0].count }, 'Total events for users (all-time)');
-    }
+    logger.debug({ guildId, totalMembers: memberUserIds.length, membersWithActivity: res.rowCount }, 'Quota leaderboard query completed');
 
     return res.rows.map(row => ({
         user_id: row.actor_user_id,

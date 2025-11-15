@@ -1,27 +1,33 @@
 // bot/src/lib/http.ts
+import { randomUUID } from 'crypto';
 import { botConfig } from '../../config.js';
+import { createLogger } from '../logging/logger.js';
 
 const BASE = botConfig.BACKEND_URL;
 const API_KEY = botConfig.BACKEND_API_KEY;
+const logger = createLogger('HTTP');
 
-function headers() {
+function headers(requestId: string) {
     return {
         'content-type': 'application/json',
         'x-api-key': API_KEY,
+        'x-request-id': requestId, // Correlation ID for tracing
     };
 }
 
 export class BackendError extends Error {
     code?: string;
     status?: number;
-    constructor(message: string, code?: string, status?: number) {
+    requestId?: string;
+    constructor(message: string, code?: string, status?: number, requestId?: string) {
         super(message);
         this.code = code;
         this.status = status;
+        this.requestId = requestId;
     }
 }
 
-async function handle(res: Response) {
+async function handle(res: Response, requestId: string) {
     const text = await res.text();
     let data: any;
     try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
@@ -31,27 +37,239 @@ async function handle(res: Response) {
     // Expect unified error: { error: { code, message } }
     const code = data?.error?.code ?? 'UNKNOWN';
     const msg = data?.error?.message ?? `HTTP ${res.status}`;
-    throw new BackendError(msg, code, res.status);
+    throw new BackendError(msg, code, res.status, requestId);
+}
+
+async function makeRequest<T>(method: string, path: string, body?: any): Promise<T> {
+    const requestId = randomUUID().slice(0, 8);
+    const start = Date.now();
+    
+    logger.debug('API request starting', { requestId, method, path });
+    
+    try {
+        const options: RequestInit = { 
+            method, 
+            headers: headers(requestId)
+        };
+        
+        if (body !== undefined) {
+            options.body = JSON.stringify(body);
+        }
+        
+        const res = await fetch(`${BASE}${path}`, options);
+        const duration = Date.now() - start;
+        
+        logger.info('API request completed', { 
+            requestId, 
+            method, 
+            path, 
+            status: res.status, 
+            duration 
+        });
+        
+        return handle(res, requestId) as Promise<T>;
+    } catch (err) {
+        const duration = Date.now() - start;
+        
+        if (err instanceof BackendError) {
+            logger.warn('API request failed with backend error', { 
+                requestId, 
+                method, 
+                path, 
+                status: err.status,
+                code: err.code,
+                duration,
+                message: err.message
+            });
+        } else {
+            logger.error('API request failed', { 
+                requestId, 
+                method, 
+                path, 
+                duration,
+                error: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
+        }
+        
+        throw err;
+    }
 }
 
 export async function getJSON<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'GET', headers: headers() });
-    return handle(res) as Promise<T>;
+    return makeRequest<T>('GET', path);
 }
 
 export async function postJSON<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
-    return handle(res) as Promise<T>;
+    return makeRequest<T>('POST', path, body);
 }
 
 export async function patchJSON<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'PATCH', headers: headers(), body: JSON.stringify(body) });
-    return handle(res) as Promise<T>;
+    return makeRequest<T>('PATCH', path, body);
 }
 
 export async function deleteJSON<T>(path: string, body: any): Promise<T> {
-    const res = await fetch(`${BASE}${path}`, { method: 'DELETE', headers: headers(), body: JSON.stringify(body) });
-    return handle(res) as Promise<T>;
+    return makeRequest<T>('DELETE', path, body);
+}
+
+/** Create a modmail ticket (POST /modmail/tickets) */
+export async function createModmailTicket(payload: {
+    ticket_id: string;
+    guild_id: string;
+    user_id: string;
+    content: string;
+    attachments: string[];
+    thread_id?: string;
+    message_id?: string;
+}): Promise<{
+    ticket_id: string;
+    guild_id: string;
+    user_id: string;
+    status: string;
+    thread_id: string | null;
+    message_id: string | null;
+    created_at: string;
+}> {
+    return postJSON('/modmail/tickets', payload);
+}
+
+/** Get a modmail ticket (GET /modmail/tickets/:ticket_id) */
+export async function getModmailTicket(
+    ticketId: string
+): Promise<{
+    ticket_id: string;
+    guild_id: string;
+    user_id: string;
+    status: string;
+    thread_id: string | null;
+    message_id: string | null;
+    created_at: string;
+    closed_at: string | null;
+    closed_by: string | null;
+}> {
+    return getJSON(`/modmail/tickets/${ticketId}`);
+}
+
+/** Close a modmail ticket (PATCH /modmail/tickets/:ticket_id/close) */
+export async function closeModmailTicket(
+    ticketId: string,
+    payload: {
+        closed_by: string;
+    }
+): Promise<{
+    ticket_id: string;
+    status: string;
+    closed_at: string;
+    closed_by: string;
+}> {
+    return patchJSON(`/modmail/tickets/${ticketId}/close`, payload);
+}
+
+/** Add a message to a modmail ticket (POST /modmail/tickets/:ticket_id/messages) */
+export async function addModmailMessage(
+    ticketId: string,
+    payload: {
+        author_id: string;
+        content: string;
+        attachments?: string[];
+        is_staff_reply: boolean;
+    }
+): Promise<{
+    message_id: number;
+    ticket_id: string;
+    author_id: string;
+    content: string;
+    attachments: string[];
+    sent_at: string;
+    is_staff_reply: boolean;
+}> {
+    return postJSON(`/modmail/tickets/${ticketId}/messages`, payload);
+}
+
+/** Get all messages for a modmail ticket (GET /modmail/tickets/:ticket_id/messages) */
+export async function getModmailMessages(
+    ticketId: string
+): Promise<{
+    messages: Array<{
+        message_id: number;
+        ticket_id: string;
+        author_id: string;
+        content: string;
+        attachments: string[];
+        sent_at: string;
+        is_staff_reply: boolean;
+    }>;
+}> {
+    return getJSON(`/modmail/tickets/${ticketId}/messages`);
+}
+
+/** Get open modmail tickets for a guild (GET /modmail/tickets/guild/:guild_id) */
+export async function getGuildModmailTickets(
+    guildId: string,
+    status?: 'open' | 'closed'
+): Promise<{
+    tickets: Array<{
+        ticket_id: string;
+        guild_id: string;
+        user_id: string;
+        status: string;
+        thread_id: string | null;
+        message_id: string | null;
+        created_at: string;
+        closed_at: string | null;
+        closed_by: string | null;
+    }>;
+}> {
+    const query = status ? `?status=${status}` : '';
+    return getJSON(`/modmail/tickets/guild/${guildId}${query}`);
+}
+
+/** Check if a user is blacklisted from modmail (GET /modmail/blacklist/:guild_id/:user_id) */
+export async function checkModmailBlacklist(
+    guildId: string,
+    userId: string
+): Promise<{
+    blacklisted: boolean;
+    reason: string | null;
+    blacklisted_by: string | null;
+    blacklisted_at: string | null;
+}> {
+    return getJSON(`/modmail/blacklist/${guildId}/${userId}`);
+}
+
+/** Blacklist a user from modmail (POST /modmail/blacklist) */
+export async function blacklistModmail(payload: {
+    actor_user_id: string;
+    actor_roles: string[];
+    guild_id: string;
+    user_id: string;
+    reason: string;
+}): Promise<{
+    success: boolean;
+    blacklist: {
+        guild_id: string;
+        user_id: string;
+        modmail_blacklisted: boolean;
+        modmail_blacklist_reason: string;
+        modmail_blacklisted_by: string;
+        modmail_blacklisted_at: string;
+    };
+}> {
+    return postJSON('/modmail/blacklist', payload);
+}
+
+/** Unblacklist a user from modmail (POST /modmail/unblacklist) */
+export async function unblacklistModmail(payload: {
+    actor_user_id: string;
+    actor_roles: string[];
+    guild_id: string;
+    user_id: string;
+    reason: string;
+}): Promise<{
+    success: boolean;
+    message: string;
+}> {
+    return postJSON('/modmail/unblacklist', payload);
 }
 
 /** Set key window for a run (PATCH /runs/:id/key-window) */
@@ -157,11 +375,7 @@ export async function setGuildRoles(
         actor_has_admin_permission?: boolean;
     }
 ): Promise<{ roles: Record<string, string | null>; warnings?: string[] }> {
-    return fetch(`${BASE}/guilds/${guildId}/roles`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/guilds/${guildId}/roles`, payload);
 }
 
 /** Get guild channel mappings (GET /guilds/:guild_id/channels) */
@@ -181,11 +395,7 @@ export async function setGuildChannels(
         actor_has_admin_permission?: boolean;
     }
 ): Promise<{ channels: Record<string, string | null>; warnings?: string[] }> {
-    return fetch(`${BASE}/guilds/${guildId}/channels`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/guilds/${guildId}/channels`, payload);
 }
 
 /** Get guild dungeon role ping mappings (GET /guilds/:guild_id/dungeon-role-pings) */
@@ -209,11 +419,7 @@ export async function setDungeonRolePing(
     dungeon_role_pings: Record<string, string>;
     updated: { dungeon_key: string; discord_role_id: string | null };
 }> {
-    return fetch(`${BASE}/guilds/${guildId}/dungeon-role-pings`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/guilds/${guildId}/dungeon-role-pings`, payload);
 }
 
 /** Create a punishment (POST /punishments) */
@@ -221,7 +427,7 @@ export async function createPunishment(payload: {
     actor_user_id: string;
     guild_id: string;
     user_id: string;
-    type: 'warn' | 'suspend';
+    type: 'warn' | 'suspend' | 'mute';
     reason: string;
     duration_minutes?: number;
     actor_roles?: string[];
@@ -291,6 +497,7 @@ export async function removePunishment(
         actor_user_id: string;
         removal_reason: string;
         actor_roles?: string[];
+        actor_has_admin?: boolean;
     }
 ): Promise<{
     id: string;
@@ -366,11 +573,7 @@ export async function updateQuotaRoleConfig(
     };
     dungeon_overrides: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/config/${guildId}/${roleId}`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/quota/config/${guildId}/${roleId}`, payload);
 }
 
 /** Set dungeon point override (PUT /quota/config/:guild_id/:role_id/dungeon/:dungeon_key) */
@@ -387,11 +590,7 @@ export async function setDungeonOverride(
 ): Promise<{
     dungeon_overrides: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/config/${guildId}/${roleId}/dungeon/${dungeonKey}`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/quota/config/${guildId}/${roleId}/dungeon/${dungeonKey}`, payload);
 }
 
 /** Delete dungeon point override (DELETE /quota/config/:guild_id/:role_id/dungeon/:dungeon_key) */
@@ -407,11 +606,7 @@ export async function deleteDungeonOverride(
 ): Promise<{
     dungeon_overrides: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/config/${guildId}/${roleId}/dungeon/${dungeonKey}`, {
-        method: 'DELETE',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('DELETE', `/quota/config/${guildId}/${roleId}/dungeon/${dungeonKey}`, payload);
 }
 
 /** Get quota leaderboard (POST /quota/leaderboard/:guild_id/:role_id) */
@@ -472,11 +667,7 @@ export async function setRaiderPoints(
 ): Promise<{
     dungeon_points: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/raider-points/${guildId}/${dungeonKey}`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/quota/raider-points/${guildId}/${dungeonKey}`, payload);
 }
 
 /** Delete raider points for a specific dungeon (DELETE /quota/raider-points/:guild_id/:dungeon_key) */
@@ -491,11 +682,7 @@ export async function deleteRaiderPoints(
 ): Promise<{
     dungeon_points: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/raider-points/${guildId}/${dungeonKey}`, {
-        method: 'DELETE',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('DELETE', `/quota/raider-points/${guildId}/${dungeonKey}`, payload);
 }
 
 /** Get key pop points configuration for all dungeons (GET /quota/key-pop-points/:guild_id) */
@@ -520,11 +707,7 @@ export async function setKeyPopPoints(
 ): Promise<{
     dungeon_points: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/key-pop-points/${guildId}/${dungeonKey}`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('PUT', `/quota/key-pop-points/${guildId}/${dungeonKey}`, payload);
 }
 
 /** Delete key pop points for a specific dungeon (DELETE /quota/key-pop-points/:guild_id/:dungeon_key) */
@@ -539,11 +722,7 @@ export async function deleteKeyPopPoints(
 ): Promise<{
     dungeon_points: Record<string, number>;
 }> {
-    return fetch(`${BASE}/quota/key-pop-points/${guildId}/${dungeonKey}`, {
-        method: 'DELETE',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('DELETE', `/quota/key-pop-points/${guildId}/${dungeonKey}`, payload);
 }
 
 /** Manually adjust quota points for a user (POST /quota/adjust-quota-points/:guild_id/:user_id) */
@@ -561,11 +740,7 @@ export async function adjustQuotaPoints(
     amount_adjusted: number;
     new_total: number;
 }> {
-    return fetch(`${BASE}/quota/adjust-quota-points/${guildId}/${userId}`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('POST', `/quota/adjust-quota-points/${guildId}/${userId}`, payload);
 }
 
 /** Manually adjust regular (raider) points for a user (POST /quota/adjust-points/:guild_id/:user_id) */
@@ -583,11 +758,7 @@ export async function adjustPoints(
     amount_adjusted: number;
     new_total: number;
 }> {
-    return fetch(`${BASE}/quota/adjust-points/${guildId}/${userId}`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(payload),
-    }).then(handle);
+    return makeRequest('POST', `/quota/adjust-points/${guildId}/${userId}`, payload);
 }
 
 /** Create a note (POST /notes) */
@@ -639,6 +810,28 @@ export async function getUserNotes(
     return getJSON(`/notes/user/${guildId}/${userId}`);
 }
 
+/** Remove a note (DELETE /notes/:id) */
+export async function removeNote(
+    id: string,
+    payload: {
+        actor_user_id: string;
+        removal_reason: string;
+        actor_roles?: string[];
+        actor_has_admin?: boolean;
+    }
+): Promise<{
+    id: string;
+    guild_id: string;
+    user_id: string;
+    moderator_id: string;
+    note_text: string;
+    created_at: string;
+    removed_by: string;
+    removal_reason: string;
+}> {
+    return deleteJSON(`/notes/${id}`, payload);
+}
+
 /** Get guild verification config (GET /verification/config/:guild_id) */
 export async function getGuildVerificationConfig(
     guildId: string
@@ -673,12 +866,7 @@ export async function updateGuildVerificationConfig(
     realmeye_instructions_image: string | null;
     updated_at: string;
 }> {
-    const res = await fetch(`${BASE}/verification/config/${guildId}`, {
-        method: 'PUT',
-        headers: headers(),
-        body: JSON.stringify(config),
-    });
-    return handle(res);
+    return makeRequest('PUT', `/verification/config/${guildId}`, config);
 }
 
 /** Get leaderboard (GET /quota/leaderboard/:guild_id) */

@@ -21,6 +21,7 @@ const ROLE_KEYS = [
     'team',
     'verified_raider',
     'suspended',
+    'muted',
 ] as const;
 
 const zRoleKey = z.enum(ROLE_KEYS);
@@ -38,6 +39,8 @@ const CHANNEL_KEYS = [
     'raid_log',
     'quota',
     'bot_log',
+    'staff_updates',
+    'modmail',
 ] as const;
 
 const zChannelKey = z.enum(CHANNEL_KEYS);

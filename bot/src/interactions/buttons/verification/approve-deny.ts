@@ -24,6 +24,7 @@ import {
 import { hasInternalRole } from '../../../lib/permissions/permissions.js';
 import { awardModerationPoints } from '../../../lib/utilities/http.js';
 import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { withButtonLock, getVerificationLockKey } from '../../../lib/utilities/button-mutex.js';
 
 const DENIAL_REASON_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
@@ -40,26 +41,40 @@ export async function handleVerificationApprove(interaction: ButtonInteraction):
         return;
     }
 
+    // Extract user ID from button custom ID (need it for lock key)
+    const userId = interaction.customId.split(':')[2];
+    if (!userId) {
+        await interaction.reply({
+            content: '❌ Invalid button data.',
+            ephemeral: true,
+        });
+        return;
+    }
+
+    // CRITICAL: Wrap in mutex to prevent concurrent approval/denial
+    const executed = await withButtonLock(interaction, getVerificationLockKey('approve', userId), async () => {
+        await handleVerificationApproveInternal(interaction, userId);
+    });
+
+    if (!executed) {
+        // Lock was not acquired, user was already notified
+        return;
+    }
+}
+
+/**
+ * Internal handler for verification approval (protected by mutex).
+ */
+async function handleVerificationApproveInternal(interaction: ButtonInteraction, userId: string): Promise<void> {
     try {
         // Check if user has security+ role
-        const member = await interaction.guild.members.fetch(interaction.user.id);
+        const member = await interaction.guild!.members.fetch(interaction.user.id);
         const hasPermission = await hasInternalRole(member, 'security');
 
         if (!hasPermission) {
             await interaction.reply({
                 content: '❌ **Access Denied**\n\n' +
                 'You need the Security+ role to approve verification requests.',
-                ephemeral: true,
-            });
-            return;
-        }
-
-        // Extract user ID from button custom ID
-        const userId = interaction.customId.split(':')[2];
-
-        if (!userId) {
-            await interaction.reply({
-                content: '❌ Invalid button data.',
                 ephemeral: true,
             });
             return;
@@ -289,7 +304,34 @@ export async function handleVerificationDeny(interaction: ButtonInteraction): Pr
         return;
     }
 
+    // Extract user ID from button custom ID (need it for lock key)
+    const userId = interaction.customId.split(':')[2];
+    if (!userId) {
+        await interaction.reply({
+            content: '❌ Invalid button data.',
+            ephemeral: true,
+        });
+        return;
+    }
+
+    // Defer first since we need to do permission check
     await interaction.deferReply({ ephemeral: true });
+
+    // CRITICAL: Wrap in mutex to prevent concurrent approval/denial
+    const executed = await withButtonLock(interaction, getVerificationLockKey('deny', userId), async () => {
+        await handleVerificationDenyInternal(interaction, userId);
+    });
+
+    if (!executed) {
+        // Lock was not acquired, user was already notified
+        return;
+    }
+}
+
+/**
+ * Internal handler for verification denial (protected by mutex).
+ */
+async function handleVerificationDenyInternal(interaction: ButtonInteraction, userId: string): Promise<void> {
 
     try {
         // Check if user has security+ role

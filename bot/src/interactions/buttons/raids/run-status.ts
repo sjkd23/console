@@ -6,6 +6,7 @@ import { getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from '../../../lib/u
 import { logRunStatusChange, clearLogThreadCache, updateThreadStarterWithEndTime } from '../../../lib/logging/raid-logger.js';
 import { deleteRunRole } from '../../../lib/utilities/run-role-manager.js';
 import { sendRunPing } from '../../../lib/utilities/run-ping.js';
+import { withButtonLock, getRunLockKey } from '../../../lib/utilities/button-mutex.js';
 
 export async function handleStatus(
     btn: ButtonInteraction,
@@ -14,6 +15,26 @@ export async function handleStatus(
 ) {
     // For button interactions, use deferUpdate so we can edit the original ephemeral panel later.
     await btn.deferUpdate();
+
+    // CRITICAL: Wrap in mutex to prevent concurrent status changes
+    const executed = await withButtonLock(btn, getRunLockKey(status, runId), async () => {
+        await handleStatusInternal(btn, runId, status);
+    });
+
+    if (!executed) {
+        // Lock was not acquired, user was already notified
+        return;
+    }
+}
+
+/**
+ * Internal handler for run status changes (protected by mutex).
+ */
+async function handleStatusInternal(
+    btn: ButtonInteraction,
+    runId: string,
+    status: 'live' | 'ended' | 'cancelled'
+) {
 
     // Fetch run info first to check authorization
     const run = await getJSON<{
@@ -31,6 +52,8 @@ export async function handleStatus(
         description: string | null;
         roleId: string | null;
         pingMessageId: string | null;
+        keyPopCount: number;
+        chainAmount: number | null;
     }>(`/runs/${runId}`).catch(() => null);
 
     if (!run) {
@@ -192,6 +215,10 @@ export async function handleStatus(
             new ButtonBuilder()
                 .setCustomId(`run:setlocation:${runId}`)
                 .setLabel('Set Location')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId(`run:setchain:${runId}`)
+                .setLabel('Chain Amount')
                 .setStyle(ButtonStyle.Secondary)
         );
         
@@ -294,13 +321,16 @@ function buildLiveEmbed(
         party: string | null;
         location: string | null;
         description: string | null;
+        keyPopCount: number;
+        chainAmount: number | null;
     },
     btn: ButtonInteraction
 ): EmbedBuilder {
     const embed = EmbedBuilder.from(original);
     
-    // Set title with LIVE badge
-    embed.setTitle(`🟢 LIVE: ${run.dungeonLabel}`);
+    // Set title with LIVE badge and optional chain tracking
+    const chainText = run.chainAmount ? ` | Chain ${run.keyPopCount}/${run.chainAmount}` : '';
+    embed.setTitle(`🟢 LIVE: ${run.dungeonLabel}${chainText}`);
     
     // Build description with organizer and key window if active
     let desc = `Organizer: <@${run.organizerId}>`;
@@ -378,6 +408,8 @@ function buildEndedEmbed(
         organizerId: string;
         startedAt: string | null;
         endedAt: string | null;
+        keyPopCount: number;
+        chainAmount: number | null;
     },
     label: string
 ): EmbedBuilder {
@@ -401,6 +433,11 @@ function buildEndedEmbed(
         const durationMin = Math.floor(durationMs / 60000);
         const durationSec = Math.floor((durationMs % 60000) / 1000);
         desc += `\nDuration: ${durationMin}m ${durationSec}s`;
+    }
+    
+    // Add final chain count if chain tracking was enabled
+    if (run.chainAmount && run.keyPopCount > 0) {
+        desc += `\n\n**Chains Completed:** ${run.keyPopCount}/${run.chainAmount}`;
     }
     
     embed.setDescription(desc);

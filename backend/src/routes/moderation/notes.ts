@@ -180,4 +180,97 @@ export default async function notesRoutes(app: FastifyInstance) {
             return Errors.internal(reply, 'Failed to retrieve notes');
         }
     });
+
+    /**
+     * DELETE /notes/:id
+     * Remove a note
+     * Body: { actor_user_id, removal_reason, actor_roles, actor_has_admin }
+     */
+    app.delete('/notes/:id', async (req, reply) => {
+        const Params = z.object({ id: z.string().min(1).max(50) });
+        const Body = z.object({
+            actor_user_id: zSnowflake,
+            removal_reason: z.string().min(1).max(500),
+            actor_roles: z.array(zSnowflake).optional(),
+            actor_has_admin: z.boolean().optional(),
+        });
+
+        const p = Params.safeParse(req.params);
+        const b = Body.safeParse(req.body);
+
+        if (!p.success || !b.success) {
+            const msg = [...(p.error?.issues ?? []), ...(b.error?.issues ?? [])]
+                .map(i => `${i.path.join('.')}: ${i.message}`)
+                .join('; ');
+            return Errors.validation(reply, msg || 'Invalid request');
+        }
+
+        const { id } = p.data;
+        const { actor_user_id, removal_reason, actor_roles, actor_has_admin } = b.data;
+
+        try {
+            // Get the note first
+            const checkResult = await query<{
+                id: string;
+                guild_id: string;
+                user_id: string;
+                moderator_id: string;
+                note_text: string;
+                created_at: string;
+            }>(
+                `SELECT id, guild_id, user_id, moderator_id, note_text, created_at
+                 FROM note
+                 WHERE id = $1`,
+                [id]
+            );
+
+            if (checkResult.rows.length === 0) {
+                return reply.status(404).send({
+                    error: {
+                        code: 'NOTE_NOT_FOUND',
+                        message: 'Note not found',
+                    },
+                });
+            }
+
+            const note = checkResult.rows[0];
+
+            // Authorization check
+            const authorized = await hasSecurity(note.guild_id, actor_roles, actor_has_admin);
+            if (!authorized) {
+                console.log(`[Notes] User ${actor_user_id} denied note removal - not security`);
+                return Errors.notSecurity(reply);
+            }
+
+            // Ensure actor exists in member table before deleting note
+            await ensureMemberExists(actor_user_id);
+
+            // Delete the note
+            await query(
+                `DELETE FROM note WHERE id = $1`,
+                [id]
+            );
+
+            // Log audit event for note removal
+            await logAudit(note.guild_id, actor_user_id, 'note.removed', note.user_id, {
+                note_id: id,
+                note_text: note.note_text,
+                removal_reason,
+            });
+
+            return reply.send({
+                id: note.id,
+                guild_id: note.guild_id,
+                user_id: note.user_id,
+                moderator_id: note.moderator_id,
+                note_text: note.note_text,
+                created_at: note.created_at,
+                removed_by: actor_user_id,
+                removal_reason,
+            });
+        } catch (err) {
+            console.error('[Notes] Failed to remove note:', err);
+            return Errors.internal(reply, 'Failed to remove note');
+        }
+    });
 }

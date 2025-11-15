@@ -22,6 +22,7 @@ const ROLE_OPTIONS = [
     { key: 'team', label: 'Team', description: 'Auto-assigned to members with staff roles' },
     { key: 'verified_raider', label: 'Verified Raider', description: 'Verified community raider' },
     { key: 'suspended', label: 'Suspended', description: 'Temporarily suspended from raids' },
+    { key: 'muted', label: 'Muted', description: 'Temporarily muted from sending messages' },
 ] as const;
 
 export const setroles: SlashCommand = {
@@ -38,6 +39,7 @@ export const setroles: SlashCommand = {
         .addRoleOption(o => o.setName('team').setDescription('Team role (auto-assigned to staff)'))
         .addRoleOption(o => o.setName('verified_raider').setDescription('Verified Raider role'))
         .addRoleOption(o => o.setName('suspended').setDescription('Suspended role'))
+        .addRoleOption(o => o.setName('muted').setDescription('Muted role'))
         .setDMPermission(false),
 
     async run(interaction: ChatInputCommandInteraction): Promise<void> {

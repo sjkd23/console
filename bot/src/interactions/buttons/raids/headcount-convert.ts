@@ -25,8 +25,24 @@ import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier } from
 import { fetchGuildMember } from '../../../lib/utilities/interaction-helpers.js';
 import { logRaidCreation } from '../../../lib/logging/raid-logger.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
+import { withButtonLock, getHeadcountLockKey } from '../../../lib/utilities/button-mutex.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
+    // CRITICAL: Wrap in mutex to prevent concurrent conversion
+    const executed = await withButtonLock(btn, getHeadcountLockKey('convert', publicMessageId), async () => {
+        await handleHeadcountConvertInternal(btn, publicMessageId);
+    });
+
+    if (!executed) {
+        // Lock was not acquired, user was already notified
+        return;
+    }
+}
+
+/**
+ * Internal handler for headcount conversion (protected by mutex).
+ */
+async function handleHeadcountConvertInternal(btn: ButtonInteraction, publicMessageId: string) {
     // Fetch the public headcount message
     if (!btn.channel || btn.channel.type !== ChannelType.GuildText) {
         await btn.reply({

@@ -54,20 +54,17 @@ export async function updateQuotaPanel(
             return;
         }
 
-        // Fetch members with this specific role (more efficient than fetching all guild members)
-        // If the role members aren't cached, fetch all members as a fallback
-        let memberIds: string[];
-        if (role.members.size > 0) {
-            // Role members are already cached
-            memberIds = role.members.map(m => m.id);
-        } else {
-            // Need to fetch members to populate the role.members cache
-            logger.debug('Fetching all guild members to populate role cache', { guildId, roleId });
-            await guild.members.fetch();
-            memberIds = role.members.map(m => m.id);
+        // Always fetch all guild members to ensure role.members is fully populated
+        // This is necessary because Discord.js only caches members it has seen
+        logger.debug('Fetching all guild members to populate role cache', { guildId, roleId });
+        try {
+            await guild.members.fetch({ time: 30000 }); // 30 second timeout
+        } catch (err) {
+            logger.warn('Failed to fetch all members, using cached members', { guildId, roleId, err: String(err) });
         }
         
-        logger.debug('Fetching leaderboard', { guildId, roleId, memberCount: memberIds.length });
+        const memberIds = role.members.map(m => m.id);
+        logger.info('Collected role members for leaderboard', { guildId, roleId, roleName: role.name, memberCount: memberIds.length });
         
         // Get leaderboard data
         const result = await getQuotaLeaderboard(guildId, roleId, memberIds);

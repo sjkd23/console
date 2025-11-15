@@ -550,10 +550,11 @@ export default async function quotaRoutes(app: FastifyInstance) {
             
             console.log(`[Quota Leaderboard] Config created_at: ${config.created_at}, reset_at: ${config.reset_at}`);
             console.log(`[Quota Leaderboard] Period: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`);
+            console.log(`[Quota Leaderboard] Received ${member_user_ids.length} member IDs from bot`);
             
             const leaderboard = await getQuotaLeaderboard(guild_id, role_id, member_user_ids, periodStart, periodEnd);
             
-            console.log(`[Quota Leaderboard] Found ${leaderboard.length} entries for ${member_user_ids.length} members`);
+            console.log(`[Quota Leaderboard] Returning ${leaderboard.length} leaderboard entries (includes members with 0 points)`);
 
             return reply.send({
                 config,

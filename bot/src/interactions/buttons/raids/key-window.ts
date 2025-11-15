@@ -31,6 +31,8 @@ export async function handleKeyWindow(btn: ButtonInteraction, runId: string) {
             party: string | null;
             location: string | null;
             description: string | null;
+            keyPopCount: number;
+            chainAmount: number | null;
         }>(`/runs/${runId}`);
 
         if (!run.channelId || !run.postMessageId) {
@@ -123,14 +125,17 @@ function buildLiveEmbed(
         party: string | null;
         location: string | null;
         description: string | null;
+        keyPopCount: number;
+        chainAmount: number | null;
     },
     keyWindowEndsAt: string | null,
     btn: ButtonInteraction
 ): EmbedBuilder {
     const embed = EmbedBuilder.from(original);
 
-    // Set title with LIVE badge
-    embed.setTitle(`🟢 LIVE: ${run.dungeonLabel}`);
+    // Set title with LIVE badge and optional chain tracking
+    const chainText = run.chainAmount ? ` | Chain ${run.keyPopCount}/${run.chainAmount}` : '';
+    embed.setTitle(`🟢 LIVE: ${run.dungeonLabel}${chainText}`);
 
     // Build description with organizer and key window if active
     let desc = `Organizer: <@${run.organizerId}>`;

@@ -17,6 +17,7 @@ export type ErrorCode =
     | 'NOT_ORGANIZER'
     | 'NOT_AUTHORIZED'
     | 'NOT_SECURITY'
+    | 'NOT_OFFICER'
     | 'IGN_ALREADY_IN_USE'
     | 'PUNISHMENT_NOT_FOUND'
     | 'INTERNAL_ERROR';
@@ -98,6 +99,9 @@ export const Errors = {
 
     notSecurity: (reply: FastifyReply) =>
         sendError(reply, 403, 'NOT_SECURITY', 'only security role can perform this action'),
+
+    notOfficer: (reply: FastifyReply) =>
+        sendError(reply, 403, 'NOT_OFFICER', 'only officer role can perform this action'),
 
     punishmentNotFound: (reply: FastifyReply) =>
         sendError(reply, 404, 'PUNISHMENT_NOT_FOUND', 'punishment not found'),

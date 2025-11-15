@@ -63,10 +63,16 @@ import {
     handleVerificationDeny,
     handleVerificationApproveModal,
 } from './interactions/buttons/verification/approve-deny.js';
+import {
+    handleModmailConfirm,
+    handleModmailCancel,
+} from './commands/moderation/modmail.js';
+import { handleModmailClose } from './interactions/buttons/modmail/modmail-close.js';
 import { startScheduledTasks } from './lib/tasks/scheduled-tasks.js';
 import { syncTeamRoleForMember } from './lib/team/team-role-manager.js';
 import { logCommandExecution, createSuccessResult, createErrorResult } from './lib/logging/command-logging.js';
 import { BackendError } from './lib/utilities/http.js';
+import { applyButtonRateLimit } from './lib/utilities/rate-limit-middleware.js';
 
 const client = new Client({
     intents: [
@@ -160,88 +166,124 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isButton()) {
-            // Handle verification buttons
+            // Handle verification buttons (strict rate limiting)
             if (interaction.customId === 'verification:get_verified') {
+                if (!await applyButtonRateLimit(interaction, 'verification:start')) return;
                 await handleGetVerified(interaction);
                 return;
             }
             if (interaction.customId === 'verification:realmeye') {
+                if (!await applyButtonRateLimit(interaction, 'verification:method')) return;
                 await handleRealmEyeVerification(interaction);
                 return;
             }
             if (interaction.customId === 'verification:done') {
+                if (!await applyButtonRateLimit(interaction, 'verification:submit')) return;
                 await handleVerificationDone(interaction);
                 return;
             }
             if (interaction.customId === 'verification:cancel') {
+                if (!await applyButtonRateLimit(interaction, 'verification:cancel')) return;
                 await handleVerificationCancel(interaction);
                 return;
             }
             if (interaction.customId === 'verification:manual_screenshot') {
+                if (!await applyButtonRateLimit(interaction, 'verification:method')) return;
                 await handleManualVerifyScreenshot(interaction);
                 return;
             }
             if (interaction.customId.startsWith('verification:approve:')) {
+                if (!await applyButtonRateLimit(interaction, 'verification:approve')) return;
                 await handleVerificationApprove(interaction);
                 return;
             }
             if (interaction.customId.startsWith('verification:deny:')) {
+                if (!await applyButtonRateLimit(interaction, 'verification:deny')) return;
                 await handleVerificationDeny(interaction);
                 return;
             }
 
-            // Handle quota config buttons
+            // Handle modmail buttons
+            if (interaction.customId.startsWith('modmail:confirm:')) {
+                if (!await applyButtonRateLimit(interaction, 'modmail:action')) return;
+                await handleModmailConfirm(interaction);
+                return;
+            }
+            if (interaction.customId.startsWith('modmail:cancel:')) {
+                if (!await applyButtonRateLimit(interaction, 'modmail:action')) return;
+                await handleModmailCancel(interaction);
+                return;
+            }
+            if (interaction.customId.startsWith('modmail:close:')) {
+                if (!await applyButtonRateLimit(interaction, 'modmail:action')) return;
+                await handleModmailClose(interaction);
+                return;
+            }
+
+            // Handle quota config buttons (restrictive rate limiting)
             if (interaction.customId.startsWith('quota_config_basic:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaConfigBasic(interaction);
                 return;
             }
             if (interaction.customId.startsWith('quota_config_moderation:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaConfigModeration(interaction);
                 return;
             }
             if (interaction.customId.startsWith('quota_config_dungeons:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaConfigDungeons(interaction);
                 return;
             }
             if (interaction.customId.startsWith('quota_refresh_panel:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaRefreshPanel(interaction);
                 return;
             }
             if (interaction.customId.startsWith('quota_reset_panel:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaResetPanel(interaction);
                 return;
             }
             if (interaction.customId.startsWith('quota_config_stop:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await handleQuotaConfigStop(interaction);
                 return;
             }
 
             // Handle points config buttons
             if (interaction.customId === 'points_config_dungeons' || interaction.customId.startsWith('points_config_dungeons:')) {
+                if (!await applyButtonRateLimit(interaction, 'points_config_panel')) return;
                 await handlePointsConfigDungeons(interaction);
                 return;
             }
             if (interaction.customId === 'points_config_keys' || interaction.customId.startsWith('points_config_keys:')) {
+                if (!await applyButtonRateLimit(interaction, 'points_config_panel')) return;
                 await handlePointsConfigKeys(interaction);
                 return;
             }
             if (interaction.customId === 'points_config_stop' || interaction.customId.startsWith('points_config_stop:')) {
+                if (!await applyButtonRateLimit(interaction, 'points_config_panel')) return;
                 await handlePointsConfigStop(interaction);
                 return;
             }
 
             // Handle headcount buttons
             if (interaction.customId.startsWith('headcount:join:')) {
+                if (!await applyButtonRateLimit(interaction, 'run:participation')) return;
                 const panelTimestamp = interaction.customId.split(':')[2];
                 await handleHeadcountJoin(interaction, panelTimestamp);
                 return;
             }
             if (interaction.customId.startsWith('headcount:key:')) {
+                if (!await applyButtonRateLimit(interaction, 'run:key:headcount')) return;
                 const [, , panelTimestamp, dungeonCode] = interaction.customId.split(':');
                 await handleHeadcountKey(interaction, panelTimestamp, dungeonCode);
                 return;
             }
             if (interaction.customId.startsWith('headcount:org:')) {
+                if (!await applyButtonRateLimit(interaction, 'headcount:organizer')) return;
                 const parts = interaction.customId.split(':');
                 const action = parts[2]; // 'confirm', 'deny', or panelTimestamp
                 const identifier = parts[3]; // publicMessageId if confirm/deny
@@ -260,11 +302,13 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             if (interaction.customId.startsWith('headcount:end:')) {
+                if (!await applyButtonRateLimit(interaction, 'headcount:organizer')) return;
                 const publicMessageId = interaction.customId.split(':')[2];
                 await handleHeadcountEnd(interaction, publicMessageId);
                 return;
             }
             if (interaction.customId.startsWith('headcount:convert:')) {
+                if (!await applyButtonRateLimit(interaction, 'headcount:organizer')) return;
                 const publicMessageId = interaction.customId.split(':')[2];
                 await handleHeadcountConvert(interaction, publicMessageId);
                 return;
@@ -275,6 +319,7 @@ client.on('interactionCreate', async (interaction) => {
             if (ns !== 'run' || !runId) return;
 
             if (action === 'org' || action === 'panel') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 // Check if this is a confirmation action
                 if (runId === 'confirm' && rest.length > 0) {
                     await handleOrganizerPanelConfirm(interaction, rest.join(':'));
@@ -289,52 +334,64 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             if (action === 'join') {
+                if (!await applyButtonRateLimit(interaction, 'run:participation')) return;
                 await handleJoin(interaction, runId);
                 return;
             }
             if (action === 'leave') {
+                if (!await applyButtonRateLimit(interaction, 'run:participation')) return;
                 await handleLeave(interaction, runId);
                 return;
             }
             if (action === 'class') {
+                if (!await applyButtonRateLimit(interaction, 'run:class_selection')) return;
                 await handleClassSelection(interaction, runId);
                 return;
             }
             if (action === 'key') {
+                if (!await applyButtonRateLimit(interaction, 'run:key:reaction')) return;
                 // Key reaction: run:key:runId:keyType
                 const keyType = rest.join(':'); // In case keyType contains colons
                 await handleKeyReaction(interaction, runId, keyType);
                 return;
             }
             if (action === 'start') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleStatus(interaction, runId, 'live');
                 return;
             }
             if (action === 'end') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleStatus(interaction, runId, 'ended');
                 return;
             }
             if (action === 'cancel') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleStatus(interaction, runId, 'cancelled');
                 return;
             }
             if (action === 'keypop') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleKeyWindow(interaction, runId);
                 return;
             }
             if (action === 'setparty') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleSetParty(interaction, runId);
                 return;
             }
             if (action === 'setlocation') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleSetLocation(interaction, runId);
                 return;
             }
             if (action === 'setchain') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handleSetChainAmount(interaction, runId);
                 return;
             }
             if (action === 'ping') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
                 await handlePingRaiders(interaction, runId);
                 return;
             }
@@ -373,6 +430,12 @@ client.on('interactionCreate', async (interaction) => {
 
         // Handle select menu interactions
         if (interaction.isStringSelectMenu()) {
+            // Handle modmail select menu
+            if (interaction.customId.startsWith('modmail:select_guild:')) {
+                // This is handled in the modmail command's collector
+                return;
+            }
+            
             if (interaction.customId.startsWith('quota_select_dungeon_exalt:') ||
                 interaction.customId.startsWith('quota_select_dungeon_misc1:') ||
                 interaction.customId.startsWith('quota_select_dungeon_misc2:')) {

@@ -22,6 +22,9 @@ import { handleDungeonAutocomplete } from '../../lib/dungeon/dungeon-autocomplet
 import { formatKeyLabel } from '../../lib/utilities/key-emoji-helpers.js';
 import { logRaidCreation } from '../../lib/logging/raid-logger.js';
 import { createRunRole } from '../../lib/utilities/run-role-manager.js';
+import { createLogger } from '../../lib/logging/logger.js';
+
+const logger = createLogger('RunCreate');
 
 export const runCreate: SlashCommand = {
     requiredRole: 'organizer',
@@ -121,7 +124,12 @@ export const runCreate: SlashCommand = {
             }
             raidChannel = fetchedChannel as GuildTextBasedChannel;
         } catch (err) {
-            console.error('Failed to fetch raid channel:', err);
+            logger.error('Failed to fetch raid channel', { 
+                guildId: guild.id, 
+                raidChannelId,
+                error: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+            });
             await interaction.editReply(
                 '**Error:** Could not access the configured raid channel.\n\n' +
                 'It may have been deleted. Please ask a server admin to reconfigure it using `/setchannels`.'
@@ -232,7 +240,11 @@ export const runCreate: SlashCommand = {
                     content += ` <@&${roleId}>`;
                 }
             } catch (e) {
-                console.error('Failed to fetch dungeon role pings:', e);
+                logger.warn('Failed to fetch dungeon role pings', { 
+                    guildId: guild.id, 
+                    dungeonCode: codeName,
+                    error: e instanceof Error ? e.message : String(e)
+                });
                 // Continue without custom role ping
             }
             
@@ -254,7 +266,12 @@ export const runCreate: SlashCommand = {
             try {
                 await postJSON(`/runs/${runId}/message`, { postMessageId: sent.id });
             } catch (e) {
-                console.error('Failed to store post_message_id:', e);
+                logger.error('Failed to store post_message_id', { 
+                    guildId: guild.id,
+                    runId: runId,
+                    messageId: sent.id,
+                    error: e instanceof Error ? e.message : String(e)
+                });
             }
 
             // Log the run creation to raid-log channel
@@ -276,7 +293,12 @@ export const runCreate: SlashCommand = {
                     }
                 );
             } catch (e) {
-                console.error('Failed to log run creation to raid-log:', e);
+                logger.error('Failed to log run creation to raid-log', { 
+                    guildId: guild.id,
+                    runId: runId,
+                    dungeonName: d.dungeonName,
+                    error: e instanceof Error ? e.message : String(e)
+                });
             }
 
             await interaction.editReply(

@@ -12,6 +12,9 @@ import type { SlashCommand } from '../../_types.js';
 import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
 import { verifyRaider, BackendError, getGuildChannels, getRaider, getGuildRoles, awardModerationPoints } from '../../../lib/utilities/http.js';
 import { logCommandExecution, logVerificationAction } from '../../../lib/logging/bot-logger.js';
+import { createLogger } from '../../../lib/logging/logger.js';
+
+const logger = createLogger('Verify');
 
 /**
  * /verify - Manually verify a Discord member with their ROTMG IGN.
@@ -101,7 +104,11 @@ export const verify: SlashCommand = {
                 return;
             }
         } catch (checkErr) {
-            console.error('[Verify] Failed to check existing raider:', checkErr);
+            logger.warn('Failed to check existing raider', { 
+                guildId: interaction.guildId,
+                targetUserId: targetUser.id,
+                error: checkErr instanceof Error ? checkErr.message : String(checkErr)
+            });
             // Continue anyway - don't block on check failure
         }
 
@@ -115,7 +122,12 @@ export const verify: SlashCommand = {
             });
             canChangeNickname = targetCheck.canTarget;
         } catch (hierarchyErr) {
-            console.error('[Verify] Role hierarchy check failed:', hierarchyErr);
+            logger.warn('Role hierarchy check failed', { 
+                guildId: interaction.guildId,
+                actorId: interaction.user.id,
+                targetId: targetUser.id,
+                error: hierarchyErr instanceof Error ? hierarchyErr.message : String(hierarchyErr)
+            });
             canChangeNickname = false;
         }
 
@@ -144,7 +156,11 @@ export const verify: SlashCommand = {
                 return;
             }
         } catch (roleCheckErr) {
-            console.error('[Verify] Failed to check verified_raider role:', roleCheckErr);
+            logger.error('Failed to check verified_raider role', { 
+                guildId: interaction.guildId,
+                verifiedRaiderRoleId,
+                error: roleCheckErr instanceof Error ? roleCheckErr.message : String(roleCheckErr)
+            });
             await interaction.editReply('❌ Failed to verify role configuration. Please try again.');
             return;
         }
@@ -152,7 +168,11 @@ export const verify: SlashCommand = {
         try {
             // Get actor's role IDs for authorization
             const actorRoles = getMemberRoleIds(invokerMember);
-            console.log(`[Verify] User ${interaction.user.id} has ${actorRoles.length} roles: ${actorRoles.join(', ')}`);
+            logger.debug('Actor roles retrieved for verification', { 
+                guildId: interaction.guildId,
+                actorId: interaction.user.id, 
+                roleCount: actorRoles.length 
+            });
             
             // Call backend to verify raider
             const result = await verifyRaider({
@@ -179,10 +199,18 @@ export const verify: SlashCommand = {
                 // If we can't change nickname (e.g., user has higher role or bot lacks permission), log but don't fail
                 if (nickErr?.code === 50013) {
                     nicknameError = 'Missing permissions (user may have a higher role than the bot)';
-                    console.warn(`[Verify] Cannot set nickname for ${targetUser.id}: Missing Permissions`);
+                    logger.warn('Cannot set nickname for verified user - Missing Permissions', { 
+                        guildId: interaction.guildId,
+                        targetUserId: targetUser.id,
+                        ign: result.ign
+                    });
                 } else {
                     nicknameError = 'Unknown error';
-                    console.warn(`[Verify] Failed to set nickname for ${targetUser.id}:`, nickErr?.message || nickErr);
+                    logger.warn('Failed to set nickname for verified user', { 
+                        guildId: interaction.guildId,
+                        targetUserId: targetUser.id,
+                        error: nickErr?.message || String(nickErr)
+                    });
                 }
             }
 
@@ -197,10 +225,19 @@ export const verify: SlashCommand = {
             } catch (roleErr: any) {
                 if (roleErr?.code === 50013) {
                     roleError = 'Missing permissions to assign role';
-                    console.warn(`[Verify] Cannot assign verified raider role: Missing Permissions`);
+                    logger.warn('Cannot assign verified raider role - Missing Permissions', { 
+                        guildId: interaction.guildId,
+                        targetUserId: targetUser.id,
+                        roleId: verifiedRaiderRoleId
+                    });
                 } else {
                     roleError = 'Failed to assign role';
-                    console.warn(`[Verify] Failed to assign verified raider role:`, roleErr?.message || roleErr);
+                    logger.warn('Failed to assign verified raider role', { 
+                        guildId: interaction.guildId,
+                        targetUserId: targetUser.id,
+                        roleId: verifiedRaiderRoleId,
+                        error: roleErr?.message || String(roleErr)
+                    });
                 }
             }
 
@@ -250,11 +287,19 @@ export const verify: SlashCommand = {
                 );
                 
                 if (moderationPointsResult.points_awarded > 0) {
-                    console.log(`[Verify] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                    logger.info('Awarded moderation points for verification', { 
+                        guildId: interaction.guildId,
+                        actorId: interaction.user.id,
+                        pointsAwarded: moderationPointsResult.points_awarded
+                    });
                 }
             } catch (modPointsErr) {
                 // Non-critical error - log but don't fail the verification
-                console.error('[Verify] Failed to award moderation points:', modPointsErr);
+                logger.warn('Failed to award moderation points', { 
+                    guildId: interaction.guildId,
+                    actorId: interaction.user.id,
+                    error: modPointsErr instanceof Error ? modPointsErr.message : String(modPointsErr)
+                });
             }
 
             // Log to bot-log (brief since detailed log goes to veri_log)
@@ -299,7 +344,12 @@ export const verify: SlashCommand = {
                 }
             } catch (logErr) {
                 // Don't fail the command if logging fails, just log the error
-                console.warn(`Failed to log verification to veri_log channel:`, logErr);
+                logger.warn('Failed to log verification to veri_log channel', { 
+                    guildId: interaction.guildId,
+                    targetUserId: targetUser.id,
+                    ign,
+                    error: logErr instanceof Error ? logErr.message : String(logErr)
+                });
             }
         } catch (err) {
             // Map backend errors to user-friendly messages
@@ -332,7 +382,14 @@ export const verify: SlashCommand = {
                         errorMessage += 'Please try again or contact an administrator if the problem persists.';
                 }
             } else {
-                console.error('Verify command error:', err);
+                logger.error('Verify command error', { 
+                    guildId: interaction.guildId,
+                    actorId: interaction.user.id,
+                    targetId: targetUser.id,
+                    ign,
+                    error: err instanceof Error ? err.message : String(err),
+                    stack: err instanceof Error ? err.stack : undefined
+                });
                 errorMessage += 'An unexpected error occurred. Please try again later.';
             }
 
