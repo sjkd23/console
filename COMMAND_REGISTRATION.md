@@ -10,13 +10,17 @@ This bot supports two modes of command registration:
 ## Quick Start
 
 ### For Development (Instant)
-Register commands to your dev guild only:
+Register commands to your dev guild(s) only:
 
 ```bash
 npm run register-commands
 ```
 
-This uses the `DISCORD_DEV_GUILD_ID` from your `.env` file.
+This uses the `DISCORD_DEV_GUILD_ID` from your `.env` file. You can specify:
+- A single guild ID: `DISCORD_DEV_GUILD_ID=123456789012345678`
+- Multiple guild IDs (comma-separated): `DISCORD_DEV_GUILD_ID=123456789012345678,987654321098765432`
+
+Commands will be registered to all specified guilds instantly.
 
 ### For Production (Global)
 Register commands to ALL servers:
@@ -34,7 +38,7 @@ npm run register-commands -- --global
 - Testing new commands or changes
 - Developing features
 - You want instant updates
-- You only need commands in your test server
+- You need commands in one or more test servers (supports multiple guild IDs)
 
 ### Global Registration (`npm run register-commands -- --global`)
 ✅ Use when:
@@ -121,7 +125,10 @@ Required in `.env`:
 ```env
 APPLICATION_ID=your_bot_application_id
 SECRET_KEY=your_bot_token
-DISCORD_DEV_GUILD_ID=your_test_server_id  # Used for guild-specific registration
+# Single guild ID or comma-separated list for testing
+DISCORD_DEV_GUILD_ID=your_test_server_id  # Single guild
+# Or multiple guilds:
+# DISCORD_DEV_GUILD_ID=123456789012345678,987654321098765432,111222333444555666
 BACKEND_URL=http://backend:4000/v1
 BACKEND_API_KEY=your_api_key
 ```

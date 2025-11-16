@@ -85,6 +85,9 @@ Create `bot/.env`:
 ```env
 APPLICATION_ID=your_discord_app_id
 SECRET_KEY=your_discord_bot_token
+# Single guild ID or comma-separated list for testing
+# Example: DISCORD_DEV_GUILD_ID=123456789012345678
+# Or: DISCORD_DEV_GUILD_ID=123456789012345678,987654321098765432
 DISCORD_DEV_GUILD_ID=your_test_server_id
 BACKEND_URL=http://backend:4000/v1
 BACKEND_API_KEY=your_secret_key_here
@@ -1188,6 +1191,9 @@ Create `bot/.env`:
 ```env
 APPLICATION_ID=your_discord_app_id
 SECRET_KEY=your_discord_bot_token
+# Single guild ID or comma-separated list for testing
+# Single: DISCORD_DEV_GUILD_ID=123456789012345678
+# Multiple: DISCORD_DEV_GUILD_ID=123456789012345678,987654321098765432
 DISCORD_DEV_GUILD_ID=your_test_server_id
 BACKEND_URL=http://backend:4000/v1
 BACKEND_API_KEY=your_secret_key_here_make_it_long
