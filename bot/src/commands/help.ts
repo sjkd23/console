@@ -292,6 +292,20 @@ function getCommandHelp(commandName: string): CommandHelp | null {
             usage: '/ping',
             examples: ['/ping - Check bot latency'],
         },
+        taken: {
+            name: 'taken',
+            description: 'Submit an Oryx 3 completion screenshot for your currently active run. Required for O3 runs before starting.',
+            usage: '/taken screenshot:<file>',
+            examples: [
+                '/taken screenshot:[upload] - Submit fullscreen screenshot with /who and /server visible',
+            ],
+        },
+        sendrolepingembed: {
+            name: 'sendrolepingembed',
+            description: 'Send the role ping panel to the configured role-ping channel. Allows members to opt in/out of dungeon pings.',
+            usage: '/sendrolepingembed',
+            examples: ['/sendrolepingembed - Send role ping panel to channel'],
+        },
         help: {
             name: 'help',
             description: 'View command information. Use without a command to see all commands grouped by role, or specify a command for detailed help.',

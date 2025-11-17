@@ -1,576 +1,1177 @@
-# ROTMG Raid Bot
+# ROTMG Raid Bot# ROTMG Raid Bot
 
-Discord bot for organizing Realm of the Mad God dungeon runs. Handles raid coordination, member verification, moderation, and quota tracking.
 
-**Version:** 0.3.0 | [Installation](#getting-started) | [Documentation](#how-to-use) | [Contributing](#contributing)
+
+A comprehensive Discord bot for organizing and managing Realm of the Mad God dungeon runs. Features automated run coordination, member verification, moderation tools, quota tracking, and more.A comprehensive Discord bot for organizing and managing Realm of the Mad God dungeon runs. Features automated run coordination, member verification, moderation tools, quota tracking, and more.
+
+
+
+**Version:** 0.3.0**Version:** 0.3.0
+
+
+
+------
+
+
+
+## Overview## Overview
+
+
+
+This bot streamlines ROTMG raid coordination in Discord servers by providing:This bot streamlines ROTMG raid coordination in Discord servers by providing:
+
+
+
+- **Run Management** - Create interactive raid panels with real-time participant tracking and class selection- **Run Management** - Create interactive raid panels with real-time participant tracking and class selection
+
+- **Verification System** - Automated RealmEye verification or manual screenshot-based approval- **Verification System** - Automated RealmEye verification or manual screenshot-based approval
+
+- **Moderation Tools** - Warnings, timed suspensions, and comprehensive punishment tracking- **Moderation Tools** - Warnings, timed suspensions, and comprehensive punishment tracking
+
+- **Quota System** - Track organizer activity and raider participation with configurable point rewards- **Quota System** - Track organizer activity and raider participation with configurable point rewards
+
+- **Headcounts** - Gauge interest for multiple dungeons before committing to a full run- **Headcounts** - Gauge interest for multiple dungeons before committing to a full run
+
+- **Auto-Management** - Runs auto-end after 2 hours, suspensions expire automatically- **Auto-Management** - Runs auto-end after 2 hours, suspensions expire automatically
+
+
+
+Built with **Discord.js** (bot), **Fastify** (backend API), and **PostgreSQL** (database).Built with **Discord.js** (bot), **Fastify** (backend API), and **PostgreSQL** (database).
+
+
+
+------
+
+
+
+## Features## Features
+
+
+
+### Run Management### Run Management
+
+- Interactive raid panels with join buttons and class selection
+
+- Interactive raid panels with join buttons and class selection- Auto-updating participant counters and class distribution
+
+- Auto-updating participant counters and class distribution- Organizer controls for starting, ending, and managing runs
+
+- Organizer controls for starting, ending, and managing runs- Support for party names, locations, and custom descriptions
+
+- Support for party names, locations, and custom descriptions- Key pop windows with 30-second countdown timers
+
+- Key pop windows with 30-second countdown timers- Automatic run ending after 2 hours (configurable)
+
+- Automatic run ending after 2 hours (configurable)- Oryx 3 screenshot submission via `/taken` command
+
+- Oryx 3 screenshot submission via `/taken` command
+
+### Verification System
+
+### Verification System- **Automated (RealmEye)**: DM-based flow with profile verification
+
+- **Manual (Screenshot)**: Ticket-based review by Security+ staff
+
+- **Automated (RealmEye)**: DM-based flow with profile verification- Configurable verification panels and custom instructions
+
+- **Manual (Screenshot)**: Ticket-based review by Security+ staff- One IGN per member enforcement
+
+- Configurable verification panels and custom instructions- Automatic nickname updates and role assignment
+
+- One IGN per member enforcement- Alt IGN support for multi-account tracking
+
+- Automatic nickname updates and role assignment
+
+- Alt IGN support for multi-account tracking### Moderation Tools
+
+- Warning system with history tracking
+
+### Moderation Tools- Timed suspensions with automatic expiration
+
+- Mute system with automatic unmute
+
+- Warning system with history tracking- Ban/unban/softban/kick commands
+
+- Timed suspensions with automatic expiration- Staff notes visible only to Security+ roles
+
+- Mute system with automatic unmute- Comprehensive punishment history with pagination
+
+- Ban/unban/softban/kick commands- Full audit trail for all moderation actions
+
+- Staff notes visible only to Security+ roles
+
+- Comprehensive punishment history with pagination### Quota & Points System
+
+- Full audit trail for all moderation actions- Track organizer activity (runs completed per dungeon)
+
+- Track raider activity (keys popped, run participation)
+
+### Quota & Points System- Configurable point values per dungeon and role
+
+- Auto-updating leaderboard panels
+
+- Track organizer activity (runs completed per dungeon)- Manual quota adjustments for corrections
+
+- Track raider activity (keys popped, run participation)- Quota period management with configurable reset dates
+
+- Configurable point values per dungeon and role- Separate systems for organizer quota and raider points
+
+- Auto-updating leaderboard panels
+
+- Manual quota adjustments for corrections### Additional Features
+
+- Quota period management with configurable reset dates- Headcount system for multi-dungeon interest checks
+
+- Separate systems for organizer quota and raider points- Dungeon autocomplete showing recently used dungeons
+
+- Modmail system for member-to-staff communication
+
+### Additional Features- Role ping system for dungeon notifications
+
+- Automatic team role management for staff
+
+- Headcount system for multi-dungeon interest checks- Command execution logging for analytics
+
+- Dungeon autocomplete showing recently used dungeons- Raid thread management for organized logging
+
+- Modmail system for member-to-staff communication
+
+- Role ping system for dungeon notifications---
+
+- Automatic team role management for staff
+
+- Command execution logging for analytics## Architecture
+
+- Raid thread management for organized logging
+
+The system consists of three main components:
 
 ---
-
-## What This Does
-
-Coordinating raids with 50+ people gets messy fast. This bot automates the boring stuff:
-
-**Run Management** - Create raids with `/run`, track participants, manage class selection. Runs auto-end after 2 hours if you forget.
-
-**Verification** - Two options: automated RealmEye verification through DMs, or manual screenshot review. Enforces one IGN per person.
-
-**Moderation** - Issue warnings and timed suspensions that expire automatically. Everything's logged.
-
-**Quota Tracking** - See who's pulling their weight. Configurable points per dungeon, leaderboards that update in real-time.
-
-**Headcounts** - Gauge interest for up to 10 dungeons before starting runs.
-
-Built with Discord.js + Fastify + PostgreSQL. The bot handles Discord interactions, the backend API manages data.
-
----
-
-## Features
-
-**Organizers**
-- `/run` with autocomplete showing recent dungeons
-- Multi-dungeon headcount panels
-- Auto-updating quota leaderboards
-- Key pop tracking
-- Organized raid logs in threads
-
-**Raiders**
-- One-click join buttons
-- Class dropdown selection
-- `/stats` for personal progress
-- RealmEye auto-verification
-
-**Moderators**
-- `/verify` command or automated flow
-- Timed suspensions with auto-expiry
-- Silent staff notes
-- Complete audit logs
-- Role hierarchy enforcement
-
-**Tech Stack**
-- Discord.js 14 + Fastify
-- TypeScript throughout
-- PostgreSQL with 32 migrations
-- Docker Compose deployment
-- Role-based API auth
-
----
-
-## Getting Started
-
-### What You Need
 
 - Node.js 18+
-- Docker & Docker Compose (easiest), or PostgreSQL 14+ if running manually
+
+## Architecture- Docker & Docker Compose (easiest), or PostgreSQL 14+ if running manually
+
 - Discord bot token ([get one here](https://discord.com/developers/applications))
+
+The system consists of three main components:
 
 ### Setup (Docker - Recommended)
 
+### Discord Bot (Discord.js)
+
 Clone the repo:
 
+Handles all Discord interactions including slash commands, button clicks, and automated tasks. Communicates with the backend API via HTTP with API key authentication.
+
 ```bash
-git clone <your-repo-url>
+
+### Backend API (Fastify)git clone <your-repo-url>
+
 cd rotmg-raid-bot
-```
 
-Create `backend/.env`:
+REST API that manages all data operations, enforces permissions, and maintains the PostgreSQL database. Handles authorization, quota calculations, and data validation.```
 
-```env
+
+
+### Database (PostgreSQL)Create `backend/.env`:
+
+
+
+Stores all guild configurations, run data, member information, verification sessions, punishments, quota events, and audit logs. Uses 46+ migration files for schema management.```env
+
 PORT=4000
-BACKEND_API_KEY=your_secret_key_here
-DATABASE_URL=postgres://postgres:postgres@db:5432/rotmg_raids
-```
 
-Create `bot/.env`:
+**Communication Flow:**BACKEND_API_KEY=your_secret_key_here
+
+DATABASE_URL=postgres://postgres:postgres@db:5432/rotmg_raids
+
+```text```
+
+Discord User → Bot (validates & defers) → Backend API (authorizes & processes) → Database
+
+Database → Backend API (returns data) → Bot (updates Discord UI) → Discord UserCreate `bot/.env`:
+
+```
 
 ```env
-APPLICATION_ID=your_discord_app_id
+
+---APPLICATION_ID=your_discord_app_id
+
 SECRET_KEY=your_discord_bot_token
-DISCORD_DEV_GUILD_ID=your_test_server_id
+
+## InstallationDISCORD_DEV_GUILD_ID=your_test_server_id
+
 BACKEND_URL=http://backend:4000/v1
-BACKEND_API_KEY=your_secret_key_here
+
+### PrerequisitesBACKEND_API_KEY=your_secret_key_here
+
 ```
 
-Make sure `BACKEND_API_KEY` matches in both files.
+- Node.js 18+ (LTS recommended)
+
+- Docker & Docker Compose (recommended), or PostgreSQL 14+Make sure `BACKEND_API_KEY` matches in both files.
+
+- Discord bot token from [Discord Developer Portal](https://discord.com/developers/applications)
 
 Fire it up:
 
-```bash
-docker-compose up -d
-docker-compose logs -f bot  # watch it start
-```
+### Quick Start with Docker (Recommended)
 
-First run takes a minute - it's installing deps and running database migrations.
+```bash
+
+1. **Clone the repository**docker-compose up -d
+
+docker-compose logs -f bot  # watch it start
+
+   ```bash```
+
+   git clone <your-repo-url>
+
+   cd rotmg-raid-botFirst run takes a minute - it's installing deps and running database migrations.
+
+   ```
 
 ### Setup (Manual)
 
+2. **Configure backend** - Create `backend/.env`:
+
 If you don't want Docker:
 
-**Backend:**
-```bash
-cd backend
-npm install
-npm run migrate  # set up database
-npm run dev
-```
+   ```env
 
-**Bot:**
-```bash
-cd bot
-npm install
-npm run register  # register commands with Discord
+   PORT=4000**Backend:**
+
+   BACKEND_API_KEY=your_secure_random_key_here```bash
+
+   DATABASE_URL=postgres://postgres:postgres@db:5432/rotmg_raidscd backend
+
+   NODE_ENV=productionnpm install
+
+   ```npm run migrate  # set up database
+
 npm run dev
-```
+
+3. **Configure bot** - Create `bot/.env`:```
+
+
+
+   ```env**Bot:**
+
+   APPLICATION_ID=your_discord_application_id```bash
+
+   SECRET_KEY=your_discord_bot_tokencd bot
+
+   DISCORD_DEV_GUILD_ID=your_test_server_id_optionalnpm install
+
+   BACKEND_URL=http://backend:4000/v1npm run register  # register commands with Discord
+
+   BACKEND_API_KEY=your_secure_random_key_herenpm run dev
+
+   NODE_ENV=production```
+
+   ```
 
 ### Configure Your Server
 
+   **Important:** `BACKEND_API_KEY` must match in both files.
+
 Once the bot's online, run these in Discord:
 
+4. **Start all services**
+
 **1. Map roles** (required):
-```
-/setroles
-  organizer: @Raid Leader
+
+   ```bash```
+
+   docker-compose up -d/setroles
+
+   ```  organizer: @Raid Leader
+
   security: @Security
-  verified_raider: @Verified
+
+   First startup takes a few minutes to install dependencies and run database migrations.  verified_raider: @Verified
+
   suspended: @Suspended
+
+5. **Verify startup**```
+
+
+
+   ```bash**2. Map channels** (recommended):
+
+   docker-compose logs -f bot```
+
+   ```/setchannels
+
+  raid: #raids
+
+   Look for: `Successfully registered X commands` and `Bot is ready!`  veri_log: #verification-log
+
+  punishment_log: #moderation-log
+
+### Manual Installation  quota: #quota-boards
+
 ```
 
-**2. Map channels** (recommended):
-```
-/setchannels
-  raid: #raids
-  veri_log: #verification-log
-  punishment_log: #moderation-log
-  quota: #quota-boards
-```
+If you prefer running services directly:
 
 **3. Test it:**
-```
+
+**Backend:**```
+
 /run dungeon:Shatters
+
+```bash```
+
+cd backend
+
+npm installYou should see an embed with buttons. Click Join to test interactions.
+
+npm run migrate  # Run database migrations
+
+npm run dev      # Start with hot reload---
+
 ```
-
-You should see an embed with buttons. Click Join to test interactions.
-
----
 
 ## How to Use
 
+**Bot:**
+
 ### Running Raids
 
-The `/run` command creates a raid post with buttons:
+```bash
 
-```
-/run dungeon:Shatters party:Nexus2 location:USEast
-```
+cd botThe `/run` command creates a raid post with buttons:
 
-Autocomplete shows your server's recently used dungeons. Raiders click Join, pick their class, and you click Organizer Panel to Start/End the run. If you forget to end it, the bot does it automatically after 2 hours.
+npm install
 
-For quick interest checks:
+npm run register # Register slash commands with Discord```
 
-```
+npm run dev      # Start with hot reload/run dungeon:Shatters party:Nexus2 location:USEast
+
+``````
+
+
+
+Ensure PostgreSQL is running and `DATABASE_URL` in `backend/.env` points to your database.Autocomplete shows your server's recently used dungeons. Raiders click Join, pick their class, and you click Organizer Panel to Start/End the run. If you forget to end it, the bot does it automatically after 2 hours.
+
+
+
+---For quick interest checks:
+
+
+
+## Initial Configuration```
+
 /headcount
+
+After the bot is online, configure your Discord server:```
+
+
+
+### 1. Configure Roles (Required)Pick up to 10 dungeons. People can join and mark which dungeons they have keys for. Convert to a full run when ready, or just cancel it.
+
+
+
+Map your Discord roles to bot permission levels:### Verifying Members
+
+
+
+```text**Automated (RealmEye):**
+
+/setroles1. `/configverification send-panel channel:#get-verified`
+
+  administrator: @Admin2. Users click "Get Verified"
+
+  moderator: @Moderator3. Bot DMs them for their IGN
+
+  head_organizer: @Head Organizer4. They add a code to their RealmEye profile
+
+  officer: @Officer5. Bot verifies automatically
+
+  security: @Security
+
+  organizer: @Raid Leader**Manual (Screenshots):**
+
+  verified_raider: @Verified1. Same panel, different button
+
+  suspended: @Suspended2. User uploads vault screenshot with Discord tag visible
+
+  muted: @Muted3. Creates a ticket in #manual-verifications
+
+  team: @Team4. Security+ staff approve or deny
+
 ```
-
-Pick up to 10 dungeons. People can join and mark which dungeons they have keys for. Convert to a full run when ready, or just cancel it.
-
-### Verifying Members
-
-**Automated (RealmEye):**
-1. `/configverification send-panel channel:#get-verified`
-2. Users click "Get Verified"
-3. Bot DMs them for their IGN
-4. They add a code to their RealmEye profile
-5. Bot verifies automatically
-
-**Manual (Screenshots):**
-1. Same panel, different button
-2. User uploads vault screenshot with Discord tag visible
-3. Creates a ticket in #manual-verifications
-4. Security+ staff approve or deny
 
 **Manual Override:**
-Security staff can always force-verify someone:
+
+**Minimum required:** `organizer`, `security`, and `verified_raider`Security staff can always force-verify someone:
+
 ```
-/verify member:@Player ign:TheirIGN
+
+### 2. Configure Channels (Recommended)/verify member:@Player ign:TheirIGN
+
 ```
+
+Tell the bot where to post logs and panels:
 
 ### Moderation
 
-**Warnings:**
-```
-/warn member:@Player reason:Rushed and died
+```text
+
+/setchannels**Warnings:**
+
+  raid: #raids```
+
+  veri_log: #verification-logs/warn member:@Player reason:Rushed and died
+
+  punishment_log: #moderation-logs```
+
+  raid_log: #raid-threads
+
+  quota: #quota-leaderboards**Suspensions:**
+
+  getverified: #get-verified```
+
+  manual_verification: #manual-verifications/suspend member:@Player duration_days:3 reason:Repeated violations
+
+  bot_log: #bot-activity```
+
+  role_ping: #role-pings
+
+```Bot assigns the Suspended role and removes it when time's up.
+
+
+
+### 3. Test Basic Functionality**Check history:**
+
 ```
 
-**Suspensions:**
-```
-/suspend member:@Player duration_days:3 reason:Repeated violations
+Create a test run to verify everything works:/checkpunishments member:@Player
+
 ```
 
-Bot assigns the Suspended role and removes it when time's up.
+```text
 
-**Check history:**
-```
-/checkpunishments member:@Player
-```
+/run dungeon:ShattersShows warnings, suspensions, and staff notes. Paginated if there's lots.
 
-Shows warnings, suspensions, and staff notes. Paginated if there's lots.
+```
 
 **Staff notes** (silent warnings):
-```
+
+If you see an interactive embed with buttons, the bot is working correctly.```
+
 /addnote member:@Player note:Watch this person
+
+---```
+
+
+
+## Usage GuideOnly Security+ can see these.
+
+
+
+### Creating Runs### Quota System
+
+
+
+Use `/run` to create raid panels:Track who's actively organizing and verifying. Optional but useful for promotions.
+
+
+
+```text**Setup:**
+
+/run dungeon:Shatters party:Nexus2 location:USEast description:Bring priests```
+
+```/configquota role:@Raid Leader
+
 ```
 
-Only Security+ can see these.
-
-### Quota System
-
-Track who's actively organizing and verifying. Optional but useful for promotions.
-
-**Setup:**
-```
-/configquota role:@Raid Leader
-```
+**Features:**
 
 Opens a panel where you:
-- Set required points (e.g., "10 runs per month")
-- Set reset date (absolute datetime like "2025-12-01T00:00:00Z")
-- Override points per dungeon (Shatters = 3, Pirate Cave = 1)
-- Create auto-updating leaderboard
+
+- Dungeon autocomplete shows recently used dungeons- Set required points (e.g., "10 runs per month")
+
+- Participants click "Join" and select their class- Set reset date (absolute datetime like "2025-12-01T00:00:00Z")
+
+- Organizer Panel provides Start/End/Pop Keys controls- Override points per dungeon (Shatters = 3, Pirate Cave = 1)
+
+- Runs automatically end after 2 hours if not manually ended- Create auto-updating leaderboard
+
+- For Oryx 3 runs, use `/taken` to submit completion screenshot
 
 Points are awarded automatically when runs end or people get verified. You can also manually adjust:
 
+### Headcounts
+
 ```
-/logrun dungeon:Shatters amount:1     # add quota points
+
+Gauge interest before committing to full runs:/logrun dungeon:Shatters amount:1     # add quota points
+
 /logkey member:@Raider dungeon:Shatters amount:1  # log key pops
-/addquotapoints member:@Officer amount:5  # direct adjustment
+
+```text/addquotapoints member:@Officer amount:5  # direct adjustment
+
+/headcount```
+
 ```
 
 View stats:
-```
+
+Select up to 10 dungeons. Members can join and indicate which dungeons they have keys for. Convert to a full run when ready, or cancel if interest is low.```
+
 /stats  # your stats
-/stats member:@Someone  # their stats
+
+### Member Verification/stats member:@Someone  # their stats
+
 ```
+
+**Setup verification panel:**
 
 ---
 
-## Architecture
+```text
+
+/configverification send-panel channel:#get-verified## Architecture
+
+```
 
 The bot has two main pieces:
 
+**Verification methods:**
+
 **Discord.js Bot** - Handles all Discord interactions (commands, buttons, events). When something happens, it calls the backend API.
 
-**Fastify Backend** - REST API that manages all the data in PostgreSQL. Handles authorization, runs CRUD operations, tracks quota, etc.
+- **RealmEye (Automated)**: Members receive DM, provide IGN, add code to RealmEye profile
 
-They communicate via HTTP with API key authentication.
+- **Manual (Screenshot)**: Members upload vault screenshot, Security+ staff review ticket**Fastify Backend** - REST API that manages all the data in PostgreSQL. Handles authorization, runs CRUD operations, tracks quota, etc.
 
-**Key flows:**
 
-*Creating a run:*
+
+**Manual verification override:**They communicate via HTTP with API key authentication.
+
+
+
+```text**Key flows:**
+
+/verify member:@Player ign:TheirRotmgName
+
+```*Creating a run:*
+
 1. User runs `/run dungeon:Shatters`
-2. Bot checks permissions via API
+
+### Moderation Commands2. Bot checks permissions via API
+
 3. Bot creates run in database via `POST /runs`
-4. Bot posts embed with buttons in Discord
+
+**Warnings:**4. Bot posts embed with buttons in Discord
+
 5. Database gets the Discord message ID for updates
 
-*Ending a run:*
-1. Organizer clicks "End" button
-2. Bot calls `PATCH /runs/:id` with status='ended'
-3. Backend logs quota event automatically
-4. Backend calculates points based on dungeon config
-5. Bot updates embed and refreshes quota leaderboards
+```text
 
-*Auto-role sync:*
+/warn member:@Player reason:Rushing and dying repeatedly*Ending a run:*
+
+```1. Organizer clicks "End" button
+
+2. Bot calls `PATCH /runs/:id` with status='ended'
+
+**Suspensions (timed):**3. Backend logs quota event automatically
+
+4. Backend calculates points based on dungeon config
+
+```text5. Bot updates embed and refreshes quota leaderboards
+
+/suspend member:@Player duration:3d reason:Multiple rule violations
+
+```*Auto-role sync:*
+
 1. Admin assigns @Raid Leader to someone
-2. Bot detects role change event
+
+Suspended role is automatically removed when time expires.2. Bot detects role change event
+
 3. Bot checks if they have any staff roles
-4. Bot automatically assigns @Team role
+
+**Check punishment history:**4. Bot automatically assigns @Team role
+
 5. Reverse happens when staff roles removed
 
----
+```text
+
+/checkpunishments member:@Player active_only:false---
+
+```
 
 ## Project Structure
 
+**Staff notes (internal only):**
+
 ```
-rotmg-raid-bot/
-├── backend/                 # Fastify REST API
-│   ├── src/
+
+```textrotmg-raid-bot/
+
+/addnote member:@Player note:Watch for continued behavior├── backend/                 # Fastify REST API
+
+```│   ├── src/
+
 │   │   ├── server.ts       # Main server
-│   │   ├── db/
+
+### Quota System│   │   ├── db/
+
 │   │   │   ├── pool.ts     # PostgreSQL connection
-│   │   │   └── migrations/ # 32 migration files
+
+**Configure quota for a role:**│   │   │   └── migrations/ # 32 migration files
+
 │   │   ├── lib/            # Auth, logging, quota logic
-│   │   ├── routes/         # API endpoints
-│   │   └── plugins/        # API key auth
-│   └── Dockerfile.dev
+
+```text│   │   ├── routes/         # API endpoints
+
+/configquota role:@Raid Leader│   │   └── plugins/        # API key auth
+
+```│   └── Dockerfile.dev
+
 │
-├── bot/                     # Discord.js Bot
+
+Set required points, reset datetime, and per-dungeon point overrides through the interactive panel.├── bot/                     # Discord.js Bot
+
 │   ├── src/
-│   │   ├── index.ts        # Bot client init
+
+**Manual adjustments:**│   │   ├── index.ts        # Bot client init
+
 │   │   ├── commands/       # Slash commands
-│   │   │   ├── run.ts
-│   │   │   ├── headcount.ts
-│   │   │   ├── stats.ts
-│   │   │   ├── configs/    # /setroles, /configquota, etc.
-│   │   │   └── moderation/ # /verify, /warn, /suspend, etc.
-│   │   ├── interactions/   # Button handlers
+
+```text│   │   │   ├── run.ts
+
+/logrun dungeon:Shatters amount:1              # Add organizer quota points│   │   │   ├── headcount.ts
+
+/logkey member:@Raider dungeon:Shatters amount:1  # Log key pops│   │   │   ├── stats.ts
+
+/addquotapoints member:@Officer amount:5         # Direct quota adjustment│   │   │   ├── configs/    # /setroles, /configquota, etc.
+
+/addpoints member:@Raider amount:10             # Direct raider points adjustment│   │   │   └── moderation/ # /verify, /warn, /suspend, etc.
+
+```│   │   ├── interactions/   # Button handlers
+
 │   │   │   └── buttons/
-│   │   │       ├── raids/  # join, class selection, run status
+
+**View statistics:**│   │   │       ├── raids/  # join, class selection, run status
+
 │   │   │       ├── config/ # quota config, points config
-│   │   │       └── verification/ # get-verified, approve/deny
-│   │   ├── constants/      # 50+ dungeon definitions, classes, emojis
-│   │   ├── lib/            # HTTP client, permissions, logging
-│   │   └── services/       # RealmEye API integration
+
+```text│   │   │       └── verification/ # get-verified, approve/deny
+
+/stats                # Your own stats│   │   ├── constants/      # 50+ dungeon definitions, classes, emojis
+
+/stats member:@Player # Another member's stats│   │   ├── lib/            # HTTP client, permissions, logging
+
+```│   │   └── services/       # RealmEye API integration
+
 │   └── Dockerfile.dev
-│
+
+### Role Ping System│
+
 └── docker-compose.yml       # Postgres + Backend + Bot
-```
 
----
+**Configure role pings for dungeons:**```
 
-## Known Issues
 
-Let's be honest about what doesn't work yet:
 
-**Missing Features:**
-- No bench/leave buttons in UI (backend supports it, just not exposed)
-- Can't view who joined a run except by looking at the counter
+```text---
+
+/configrolepings
+
+```## Known Issues
+
+
+
+**Send role ping panel:**Let's be honest about what doesn't work yet:
+
+
+
+```text**Missing Features:**
+
+/sendrolepingembed- No bench/leave buttons in UI (backend supports it, just not exposed)
+
+```- Can't view who joined a run except by looking at the counter
+
 - No `/runhistory` command to browse past runs
-- Auto-end duration is hardcoded at 2 hours
+
+Members can toggle which dungeon types they want to be pinged for.- Auto-end duration is hardcoded at 2 hours
+
 - No voice channel integration
-- Tested mostly in one server - multi-guild edge cases might exist
 
-**Bugs:**
+---- Tested mostly in one server - multi-guild edge cases might exist
+
+
+
+## Project Structure**Bugs:**
+
 - If you're missing env vars, bot crashes with cryptic errors instead of telling you what's wrong
-- Race condition if two organizers click "End" at the same time
-- Bot can't manage roles higher than its own role (Discord limitation, but error message could be better)
-- Quota reset doesn't happen automatically - you have to click "Reset Panel" manually
 
-**Performance:**
-- No caching layer - every permission check hits the database
-- No rate limiting on the backend API
-- Quota leaderboards fetch all members then filter (works fine for <100 people)
+```text- Race condition if two organizers click "End" at the same time
 
-**Things that could break:**
-- If a channel gets deleted while a run is active, the run orphans in the database
-- Database migrations have no rollback scripts
-- If Discord goes down during auto-end tasks, they'll retry on next run but there might be delays
+rotmg-raid-bot/- Bot can't manage roles higher than its own role (Discord limitation, but error message could be better)
 
-These are all fixable, just haven't gotten to them yet.
+├── backend/                    # Fastify REST API- Quota reset doesn't happen automatically - you have to click "Reset Panel" manually
 
----
+│   ├── src/
 
----
+│   │   ├── server.ts          # Main server entry**Performance:**
 
-## Troubleshooting
+│   │   ├── db/- No caching layer - every permission check hits the database
 
-**Bot doesn't respond to commands**
-- Check logs: `docker-compose logs bot | grep "Successfully registered"`
-- Verify bot has Send Messages, Embed Links, Manage Roles permissions
-- Run `/setroles` to configure at least organizer and verified_raider roles
+│   │   │   ├── pool.ts        # PostgreSQL connection- No rate limiting on the backend API
 
-**"NOT_ORGANIZER" error**
-- You need the Organizer role configured in `/setroles`
-- Make sure you actually have that Discord role
-- Bot must be able to see your roles
+│   │   │   └── migrations/    # 46+ schema migrations- Quota leaderboards fetch all members then filter (works fine for <100 people)
 
-**Backend connection errors**
-- Check `BACKEND_URL` in bot/.env matches where backend is running
-- Verify `BACKEND_API_KEY` is identical in both .env files
-- If using Docker: `docker-compose logs` to check both services
+│   │   ├── lib/               # Auth, logging, quota logic
 
-**Database migrations fail**
-- Check PostgreSQL is running and accessible
+│   │   ├── routes/            # API endpoints**Things that could break:**
+
+│   │   │   ├── runs.ts        # Run CRUD operations- If a channel gets deleted while a run is active, the run orphans in the database
+
+│   │   │   ├── raiders.ts     # Verification endpoints- Database migrations have no rollback scripts
+
+│   │   │   ├── punishments.ts # Moderation endpoints- If Discord goes down during auto-end tasks, they'll retry on next run but there might be delays
+
+│   │   │   ├── quota.ts       # Quota tracking
+
+│   │   │   └── guilds.ts      # Configuration endpointsThese are all fixable, just haven't gotten to them yet.
+
+│   │   └── plugins/           # API key authentication
+
+│   └── Dockerfile.dev---
+
+│
+
+├── bot/                        # Discord.js Bot---
+
+│   ├── src/
+
+│   │   ├── index.ts           # Bot initialization## Troubleshooting
+
+│   │   ├── register-commands.ts # Command registration
+
+│   │   ├── commands/          # Slash commands**Bot doesn't respond to commands**
+
+│   │   │   ├── organizer/     # Run, headcount, logrun, logkey, taken- Check logs: `docker-compose logs bot | grep "Successfully registered"`
+
+│   │   │   ├── moderation/    # Verify, warn, suspend, ban, etc.- Verify bot has Send Messages, Embed Links, Manage Roles permissions
+
+│   │   │   └── configs/       # setroles, setchannels, configquota, etc.- Run `/setroles` to configure at least organizer and verified_raider roles
+
+│   │   ├── interactions/      # Button handlers
+
+│   │   │   └── buttons/**"NOT_ORGANIZER" error**
+
+│   │   │       ├── raids/     # Join, class selection, organizer panel- You need the Organizer role configured in `/setroles`
+
+│   │   │       ├── config/    # Quota/points configuration- Make sure you actually have that Discord role
+
+│   │   │       └── verification/ # Verification approval/denial- Bot must be able to see your roles
+
+│   │   ├── constants/         # Dungeon data, classes, emojis
+
+│   │   ├── lib/               # HTTP client, permissions, logging**Backend connection errors**
+
+│   │   ├── services/          # RealmEye integration- Check `BACKEND_URL` in bot/.env matches where backend is running
+
+│   │   └── types/             # TypeScript types- Verify `BACKEND_API_KEY` is identical in both .env files
+
+│   └── Dockerfile.dev- If using Docker: `docker-compose logs` to check both services
+
+│
+
+└── docker-compose.yml          # Orchestration (db, backend, bot)**Database migrations fail**
+
+```- Check PostgreSQL is running and accessible
+
 - Verify `DATABASE_URL` format: `postgres://user:pass@host:port/database`
-- Look at `backend/src/db/migrations/` to see which one failed
+
+---- Look at `backend/src/db/migrations/` to see which one failed
+
 - You might need to manually fix the schema and re-run
 
+## Command Reference
+
 **Verification not working**
-- Set channels: `/setchannels getverified:#your-channel`
+
+### General Commands- Set channels: `/setchannels getverified:#your-channel`
+
 - For RealmEye: check if realmeye.com is accessible (sometimes it's down)
-- For manual: ensure manual_verification channel is configured
-- Bot needs permission to send DMs (users must allow server DMs)
 
-**Quota panels not updating**
-- Verify quota channel set: `/setchannels quota:#your-channel`
-- Bot needs send/edit message permissions in that channel
+| Command | Description | Required Role |- For manual: ensure manual_verification channel is configured
+
+|---------|-------------|---------------|- Bot needs permission to send DMs (users must allow server DMs)
+
+| `/ping` | Check bot latency | Verified Raider |
+
+| `/help [command]` | View all commands or detailed help | Organizer |**Quota panels not updating**
+
+| `/stats [member]` | View quota and point statistics | Verified Raider |- Verify quota channel set: `/setchannels quota:#your-channel`
+
+| `/leaderboard` | View server leaderboards | Verified Raider |- Bot needs send/edit message permissions in that channel
+
 - Role in `/configquota` must exist and have members
-- Try completing a run to trigger an update
 
-**Role management fails (403 errors)**
-- Bot's role must be higher than roles it manages
-- Check Server Settings > Roles for hierarchy
-- Bot needs "Manage Roles" permission
-- Can't manage Discord owners/admins (platform limitation)
+### Organizer Commands- Try completing a run to trigger an update
 
----
 
-## Contributing
 
-Want to help? Here's how:
+| Command | Description | Required Role |**Role management fails (403 errors)**
 
-**Getting Started**
-1. Fork the repo
-2. Set up dev environment (see [Installation](#getting-started))
-3. Pick something from [Known Issues](#known-issues) or add your own feature
-4. Test thoroughly before submitting
+|---------|-------------|---------------|- Bot's role must be higher than roles it manages
 
-**Code Style**
-- TypeScript everywhere
-- Add JSDoc for complex functions
-- Use Zod for validation
-- Keep functions focused
+| `/run` | Create a new raid run | Organizer |- Check Server Settings > Roles for hierarchy
 
-**Testing**
-No automated tests yet (would love help with this). Test manually:
-- Create runs and click buttons
-- Test with different roles
-- Try edge cases (missing config, invalid input)
-- Check database state after operations
+| `/headcount` | Create interest check for multiple dungeons | Organizer |- Bot needs "Manage Roles" permission
 
-**Pull Requests**
-- Clear description of what it does
-- Reference related issues
+| `/taken` | Submit Oryx 3 completion screenshot | Organizer |- Can't manage Discord owners/admins (platform limitation)
+
+| `/logrun` | Manually log run completion | Organizer |
+
+| `/logkey` | Manually log key pops | Organizer |---
+
+
+
+### Moderation Commands## Contributing
+
+
+
+| Command | Description | Required Role |Want to help? Here's how:
+
+|---------|-------------|---------------|
+
+| `/verify` | Manually verify a member | Security |**Getting Started**
+
+| `/unverify` | Remove verification | Security |1. Fork the repo
+
+| `/editname` | Update verified IGN | Security |2. Set up dev environment (see [Installation](#getting-started))
+
+| `/addalt` | Add alternate IGN | Security |3. Pick something from [Known Issues](#known-issues) or add your own feature
+
+| `/removealt` | Remove alternate IGN | Security |4. Test thoroughly before submitting
+
+| `/warn` | Issue warning | Security |
+
+| `/suspend` | Suspend member (timed) | Security |**Code Style**
+
+| `/unsuspend` | Remove suspension early | Officer |- TypeScript everywhere
+
+| `/mute` | Mute member (timed) | Security |- Add JSDoc for complex functions
+
+| `/unmute` | Remove mute early | Security |- Use Zod for validation
+
+| `/kick` | Kick member from server | Security |- Keep functions focused
+
+| `/ban` | Ban member from server | Security |
+
+| `/unban` | Unban user | Security |**Testing**
+
+| `/softban` | Ban then unban (message cleanup) | Security |No automated tests yet (would love help with this). Test manually:
+
+| `/checkpunishments` | View punishment history | Security |- Create runs and click buttons
+
+| `/removepunishment` | Remove punishment by ID | Officer |- Test with different roles
+
+| `/addnote` | Add staff note | Security |- Try edge cases (missing config, invalid input)
+
+| `/addpoints` | Manually adjust raider points | Officer |- Check database state after operations
+
+| `/addquotapoints` | Manually adjust quota points | Officer |
+
+| `/addrole` | Promote member to staff | Officer |**Pull Requests**
+
+| `/syncteam` | Sync team role for all staff | Administrator |- Clear description of what it does
+
+| `/purge` | Bulk delete messages | Moderator |- Reference related issues
+
 - Make sure bot starts and basic commands work
-- Update README if adding features
 
-**Areas That Need Help**
-- Unit/integration tests
-- Environment variable validation on startup
-- Bench/leave buttons in UI
-- Run history command
-- Voice channel integration
-- Redis caching layer
-- Better error messages
+### Configuration Commands- Update README if adding features
+
+
+
+| Command | Description | Required Role |**Areas That Need Help**
+
+|---------|-------------|---------------|- Unit/integration tests
+
+| `/setroles` | Configure role mappings | Moderator |- Environment variable validation on startup
+
+| `/setchannels` | Configure channel mappings | Moderator |- Bench/leave buttons in UI
+
+| `/configquota` | Configure quota settings | Moderator |- Run history command
+
+| `/configpoints` | Configure raider points | Moderator |- Voice channel integration
+
+| `/configverification` | Send verification panel | Moderator |- Redis caching layer
+
+| `/configrolepings` | Configure role pings | Moderator |- Better error messages
+
+| `/sendrolepingembed` | Send role ping panel | Administrator |
 
 ---
+
+### Modmail Commands
 
 ## Tech Stack
 
-| Component | Technology | Why |
-|-----------|-----------|-----|
-| Bot | Discord.js 14 | Best Discord library for Node.js |
-| Backend | Fastify | Fast, low overhead, great TS support |
-| Database | PostgreSQL 14 | Reliable, handles relational data well |
+| Command | Description | Required Role |
+
+|---------|-------------|---------------|| Component | Technology | Why |
+
+| `/modmail` | Send message to staff | Verified Raider ||-----------|-----------|-----|
+
+| `/modmailreply` | Reply to modmail ticket | Security || Bot | Discord.js 14 | Best Discord library for Node.js |
+
+| `/modmailblacklist` | Block user from modmail | Moderator || Backend | Fastify | Fast, low overhead, great TS support |
+
+| `/modmailunblacklist` | Unblock user from modmail | Moderator || Database | PostgreSQL 14 | Reliable, handles relational data well |
+
 | Language | TypeScript | Type safety catches bugs early |
-| Runtime | Node.js 18+ | Modern JS features, stable LTS |
+
+---| Runtime | Node.js 18+ | Modern JS features, stable LTS |
+
 | Validation | Zod | Runtime type checking |
-| Deploy | Docker Compose | Consistent dev/prod environments |
 
----
+## Troubleshooting| Deploy | Docker Compose | Consistent dev/prod environments |
 
-## Recent Updates (v0.3.0)
 
-**Manual Verification**
-- Dual verification: RealmEye or screenshot upload
-- Ticket system for Security+ approval
+
+### Bot Not Responding to Commands---
+
+
+
+**Causes & Solutions:**## Recent Updates (v0.3.0)
+
+
+
+- Verify commands are registered: Check `docker-compose logs bot` for "Successfully registered"**Manual Verification**
+
+- Ensure bot has proper permissions: Send Messages, Embed Links, Manage Roles- Dual verification: RealmEye or screenshot upload
+
+- Configure roles: Run `/setroles` to map at least organizer and verified_raider- Ticket system for Security+ approval
+
 - Custom instructions per guild
-- DM notifications for status updates
 
-**Decimal Points**
+### Permission Errors (NOT_ORGANIZER, etc.)- DM notifications for status updates
+
+
+
+**Causes & Solutions:****Decimal Points**
+
 - Award fractional points (0.5, 1.25, etc.)
-- Works for quota, raider, and key pop points
-- Backward compatible with integers
+
+- User lacks required role configured in `/setroles`- Works for quota, raider, and key pop points
+
+- Bot cannot see user's roles (permission issue)- Backward compatible with integers
+
+- Role hierarchy: Bot's role must be higher than roles it manages
 
 **Bot Log Channel**
-- New channel type for general bot activity
-- Optional command execution logging
-- Configurable via `/setchannels`
 
-**Previous (v0.2.0)**
-- Headcount system (multi-dungeon interest checks)
-- Command execution logging for analytics
+### Backend Connection Errors- New channel type for general bot activity
+
+- Optional command execution logging
+
+**Causes & Solutions:**- Configurable via `/setchannels`
+
+
+
+- Check `BACKEND_URL` in `bot/.env` matches backend location**Previous (v0.2.0)**
+
+- Verify `BACKEND_API_KEY` matches in both `.env` files- Headcount system (multi-dungeon interest checks)
+
+- If using Docker: Ensure services can communicate (`docker-compose logs`)- Command execution logging for analytics
+
 - Raid thread management
-- RealmEye verification flow
+
+### Database Issues- RealmEye verification flow
+
 - Raider points system
-- Key pop tracking
+
+**Causes & Solutions:**- Key pop tracking
+
 - Staff notes system
 
----
+- Verify PostgreSQL is running and accessible
 
-## License
+- Check `DATABASE_URL` format: `postgres://user:pass@host:port/database`---
 
-Not specified. If open-sourcing, consider MIT.
+- Migration failures: Check which migration failed and fix schema manually
 
----
+- For fresh start: Drop database and re-run `npm run migrate`## License
 
-## Acknowledgments
 
-Built for the ROTMG community by people who got tired of managing runs in spreadsheets.
+
+### Verification Not WorkingNot specified. If open-sourcing, consider MIT.
+
+
+
+**Causes & Solutions:**---
+
+
+
+- Configure channels: `/setchannels getverified:#channel manual_verification:#channel`## Acknowledgments
+
+- RealmEye down: Check if realmeye.com is accessible
+
+- DM permissions: Users must allow DMs from server membersBuilt for the ROTMG community by people who got tired of managing runs in spreadsheets.
+
+- Manual tickets: Ensure manual_verification channel is set and bot has permissions
 
 Thanks to Discord.js and Fastify teams for excellent libraries.
 
+### Quota Panels Not Updating
+
 ---
 
+**Causes & Solutions:**
+
 **Last Updated:** November 15, 2025  
-**Version:** 0.3.0  
-**Status:** Production ready
 
-Need help? Open an issue with:
+- Set quota channel: `/setchannels quota:#channel`**Version:** 0.3.0  
+
+- Check bot has Send Messages and Embed Links permissions in quota channel**Status:** Production ready
+
+- Verify role in `/configquota` exists and has members
+
+- Trigger update by completing a run or logging quota manuallyNeed help? Open an issue with:
+
 - What you tried to do
-- What happened instead
+
+---- What happened instead
+
 - Relevant error messages
-- Your setup (Docker/manual, OS)
 
-The quota system tracks and rewards organizer and verifier activity, providing leaderboards and progress tracking.
+## Technology Stack- Your setup (Docker/manual, OS)
 
-### How It Works
 
-**Points vs Quota Points:**
 
-- **quota_points**: For organizers (organizing runs) and verifiers (verifying members) - currently active
-- **points**: For raiders (completing runs, popping keys) - fully implemented with raider points config and key pop tracking
+| Component | Technology | Version | Purpose |The quota system tracks and rewards organizer and verifier activity, providing leaderboards and progress tracking.
 
-**Automatic Tracking:**
+|-----------|-----------|---------|---------|
 
-- When a run is ended (via "End" button or auto-end), a quota event is automatically logged
+| Bot | Discord.js | 14.16.3 | Discord bot framework |### How It Works
+
+| Backend | Fastify | 4.28.1 | REST API server |
+
+| Database | PostgreSQL | 14+ | Data persistence |**Points vs Quota Points:**
+
+| Language | TypeScript | 5.6.3 | Type-safe development |
+
+| Runtime | Node.js | 18+ | Execution environment |- **quota_points**: For organizers (organizing runs) and verifiers (verifying members) - currently active
+
+| Validation | Zod | 3.23.8 | Schema validation |- **points**: For raiders (completing runs, popping keys) - fully implemented with raider points config and key pop tracking
+
+| Logging | Pino | Latest | Structured logging |
+
+| Deployment | Docker Compose | 3.9 | Container orchestration |**Automatic Tracking:**
+
+
+
+---- When a run is ended (via "End" button or auto-end), a quota event is automatically logged
+
 - When a member is verified (manual `/verify` or automated RealmEye verification), a quota event is automatically logged
-- When keys are logged via `/logkey`, key pop points are tracked and awarded based on configuration
+
+## Maintenance- When keys are logged via `/logkey`, key pop points are tracked and awarded based on configuration
+
 - Points are awarded based on dungeon type and role-specific overrides
+
+### Database Backups
 
 **Configurable Point Values:**
 
+Regular backups are essential. Use `pg_dump` for PostgreSQL backups:
+
 - Default: 1 point per run completed, 1 point per verification
-- Per-dungeon overrides: Set custom point values (e.g., Shatters = 3 points, Fungal = 2 points)
-- Per-role configuration: Different roles can have different point values for the same dungeon
+
+```bash- Per-dungeon overrides: Set custom point values (e.g., Shatters = 3 points, Fungal = 2 points)
+
+docker-compose exec db pg_dump -U postgres rotmg_raids > backup_$(date +%Y%m%d).sql- Per-role configuration: Different roles can have different point values for the same dungeon
+
+```
 
 **Quota Periods:**
 
-- Configured with absolute datetime resets (e.g., "Resets on December 1, 2025 at 00:00 UTC")
-- `created_at` tracks when the current quota period started
-- `reset_at` defines when the next reset occurs
-- After reset, manually update `reset_at` to the next period and `created_at` to NOW
+### Log Management
 
-**Leaderboard Panels:**
+- Configured with absolute datetime resets (e.g., "Resets on December 1, 2025 at 00:00 UTC")
+
+Logs are written to stdout/stderr. Configure log rotation in production:- `created_at` tracks when the current quota period started
+
+- `reset_at` defines when the next reset occurs
+
+```bash- After reset, manually update `reset_at` to the next period and `created_at` to NOW
+
+docker-compose logs --tail=1000 bot > bot_logs.txt
+
+docker-compose logs --tail=1000 backend > backend_logs.txt**Leaderboard Panels:**
+
+```
 
 - Auto-updating embeds posted in the quota channel
-- Show top 25 members with quota points
+
+### Monitoring- Show top 25 members with quota points
+
 - Display who has met quota (✅) and who hasn't
-- Include rank indicators (🥇🥈🥉)
+
+Monitor these key metrics:- Include rank indicators (🥇🥈🥉)
+
 - Update in real-time when runs end or verifications occur
 
-### Configuration Workflow
+- Database connection pool usage
 
-1. **Set up role**: `/configquota role:@Raid Leader`
-2. **Configure basics**: Click "Set Basic Config" button
+- API response times### Configuration Workflow
+
+- Command execution success rate
+
+- Scheduled task completion1. **Set up role**: `/configquota role:@Raid Leader`
+
+- Error rates by type2. **Configure basics**: Click "Set Basic Config" button
+
    - Set required points (e.g., 10 points to meet quota)
-   - Set reset datetime (e.g., 2025-12-01T00:00:00Z)
+
+### Updates   - Set reset datetime (e.g., 2025-12-01T00:00:00Z)
+
 3. **Set dungeon overrides**: Click "Configure Dungeons" button
-   - Select dungeon from dropdown
+
+To update the bot:   - Select dungeon from dropdown
+
    - Enter point value (e.g., 3 for Shatters)
-4. **Create panel**: Click "Update Panel" button
-   - Bot posts leaderboard in quota channel
-   - Panel auto-updates when quota events occur
-5. **Reset quota**: Click "Reset Panel" button when period ends
+
+1. Pull latest changes: `git pull origin main`4. **Create panel**: Click "Update Panel" button
+
+2. Rebuild containers: `docker-compose build`   - Bot posts leaderboard in quota channel
+
+3. Restart services: `docker-compose up -d`   - Panel auto-updates when quota events occur
+
+4. Check logs: `docker-compose logs -f bot backend`5. **Reset quota**: Click "Reset Panel" button when period ends
+
    - Updates `created_at` to NOW (start new period)
-   - Keeps same `reset_at` until you update it
 
-### Manual Quota Management
+---   - Keeps same `reset_at` until you update it
 
-**Manually log runs** (for retroactive tracking or corrections):
 
-```text
+
+## Support & Documentation### Manual Quota Management
+
+
+
+- **Internal Docs**: See `bot/src/services/realmeye/README.md` and `backend/test/README.md`**Manually log runs** (for retroactive tracking or corrections):
+
+- **Issue Reporting**: Include error messages, setup details, and steps to reproduce
+
+- **Version**: Check version with `/ping` command or in this README```text
+
 /logrun dungeon:Shatters amount:1
-/logrun dungeon:Fungal amount:-1  # Remove 1 point
-```
+
+**Last Updated:** November 17, 2025  /logrun dungeon:Fungal amount:-1  # Remove 1 point
+
+**Status:** Production Ready```
+
 
 **Manually log key pops** (track raider key contributions):
 
