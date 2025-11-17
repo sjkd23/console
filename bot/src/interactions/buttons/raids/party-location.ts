@@ -1,16 +1,52 @@
 import {
     ButtonInteraction,
     ChannelType,
-    EmbedBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle,
-    ActionRowBuilder,
-    ModalActionRowComponentBuilder
+    EmbedBuilder
 } from 'discord.js';
 import { getJSON, patchJSON, BackendError } from '../../../lib/utilities/http.js';
-import { getMemberRoleIds } from '../../../lib//permissions/permissions.js';
 import { logRunInfoUpdate } from '../../../lib/logging/raid-logger.js';
+import {
+    createSimpleModal,
+    awaitModalSubmission,
+    ensureGuildButtonContext,
+    fetchMemberWithRoles,
+    getModalFieldValues
+} from '../../../lib/utilities/modal-helpers.js';
+import { buildRunMessageContent } from '../../../lib/utilities/run-message-helpers.js';
+
+interface RunDetails {
+    channelId: string | null;
+    postMessageId: string | null;
+    status: string;
+    dungeonLabel: string;
+    organizerId: string;
+    startedAt: string | null;
+    keyWindowEndsAt: string | null;
+    party: string | null;
+    location: string | null;
+    description: string | null;
+}
+
+/**
+ * Updates the public run message content if the run is live
+ */
+async function updatePublicRunMessage(
+    btn: ButtonInteraction,
+    run: RunDetails
+): Promise<void> {
+    if (run.status !== 'live' || !run.channelId || !run.postMessageId) {
+        return;
+    }
+
+    const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
+    if (ch && ch.type === ChannelType.GuildText) {
+        const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
+        if (pubMsg) {
+            const content = buildRunMessageContent(run.party, run.location);
+            await pubMsg.edit({ content });
+        }
+    }
+}
 
 /**
  * Handle "Set Party/Loc" button press.
@@ -18,286 +54,104 @@ import { logRunInfoUpdate } from '../../../lib/logging/raid-logger.js';
  * Both fields are optional and can be left blank.
  */
 export async function handleSetPartyLocation(btn: ButtonInteraction, runId: string) {
-    // Show modal for party and location input
-    const modal = new ModalBuilder()
-        .setCustomId(`modal:partyloc:${runId}`)
-        .setTitle('Set Party & Location');
-
-    const partyInput = new TextInputBuilder()
-        .setCustomId('party')
-        .setLabel('Party Name (optional)')
-        .setPlaceholder('e.g., USW3, EUW2, USS, etc.')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(100);
-
-    const locationInput = new TextInputBuilder()
-        .setCustomId('location')
-        .setLabel('Location/Server (optional)')
-        .setPlaceholder('e.g., O3, Bazaar, Realm, etc.')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(100);
-
-    const row1 = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(partyInput);
-    const row2 = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(locationInput);
-    modal.addComponents(row1, row2);
-
-    await btn.showModal(modal);
-
-    // Wait for modal submission
-    try {
-        const submitted = await btn.awaitModalSubmit({
-            time: 120000, // 2 minutes
-            filter: i => i.customId === `modal:partyloc:${runId}` && i.user.id === btn.user.id
-        });
-
-        await submitted.deferUpdate();
-
-        const party = submitted.fields.getTextInputValue('party').trim();
-        const location = submitted.fields.getTextInputValue('location').trim();
-
-        // Get member for role IDs
-        if (!btn.guild) {
-            await submitted.followUp({ content: 'This command can only be used in a server.', ephemeral: true });
-            return;
-        }
-
-        const member = await btn.guild.members.fetch(btn.user.id).catch(() => null);
-        const guildId = btn.guildId!;
-
-        // Update party if provided
-        if (party !== undefined) {
-            try {
-                await patchJSON(`/runs/${runId}/party`, {
-                    actorId: btn.user.id,
-                    actorRoles: getMemberRoleIds(member),
-                    party: party || ''
-                }, { guildId });
-            } catch (err) {
-                if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                    await submitted.followUp({ content: 'Only the organizer can update party.', ephemeral: true });
-                    return;
-                }
-                const msg = err instanceof Error ? err.message : 'Unknown error';
-                await submitted.followUp({ content: `Error updating party: ${msg}`, ephemeral: true });
-                return;
+    const modal = createSimpleModal(
+        `modal:partyloc:${runId}`,
+        'Set Party & Location',
+        [
+            {
+                customId: 'party',
+                label: 'Party Name (optional)',
+                placeholder: 'e.g., USW3, EUW2, USS, etc.',
+                required: false,
+                maxLength: 100
+            },
+            {
+                customId: 'location',
+                label: 'Location/Server (optional)',
+                placeholder: 'e.g., O3, Bazaar, Realm, etc.',
+                required: false,
+                maxLength: 100
             }
-        }
+        ]
+    );
 
-        // Update location if provided
-        if (location !== undefined) {
-            try {
-                await patchJSON(`/runs/${runId}/location`, {
-                    actorId: btn.user.id,
-                    actorRoles: getMemberRoleIds(member),
-                    location: location || ''
-                }, { guildId });
-            } catch (err) {
-                if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                    await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
-                    return;
-                }
-                const msg = err instanceof Error ? err.message : 'Unknown error';
-                await submitted.followUp({ content: `Error updating location: ${msg}`, ephemeral: true });
-                return;
-            }
-        }
+    const submitted = await awaitModalSubmission(btn, modal);
+    if (!submitted) return;
 
-        // Fetch updated run details
-        const run = await getJSON<{
-            channelId: string | null;
-            postMessageId: string | null;
-            status: string;
-            dungeonLabel: string;
-            organizerId: string;
-            startedAt: string | null;
-            keyWindowEndsAt: string | null;
-            party: string | null;
-            location: string | null;
-            description: string | null;
-        }>(`/runs/${runId}`);
+    await submitted.deferUpdate();
 
-        if (!run.channelId || !run.postMessageId) {
-            await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
-            return;
-        }
+    const guildCtx = await ensureGuildButtonContext(submitted);
+    if (!guildCtx) return;
 
-        // Update the public message content with party/location ONLY if run is live
-        if (run.status === 'live') {
-            const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
-            if (ch && ch.type === ChannelType.GuildText) {
-                const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
-                if (pubMsg) {
-                    let content = '@here';
-                    if (run.party && run.location) {
-                        content += ` Party: **${run.party}** | Location: **${run.location}**`;
-                    } else if (run.party) {
-                        content += ` Party: **${run.party}**`;
-                    } else if (run.location) {
-                        content += ` Location: **${run.location}**`;
-                    }
-                    await pubMsg.edit({ content });
-                }
-            }
-        }
-
-        // Log updates to raid-log
-        if (btn.guild) {
-            try {
-                if (party) {
-                    await logRunInfoUpdate(
-                        btn.client,
-                        {
-                            guildId: btn.guild.id,
-                            organizerId: run.organizerId,
-                            organizerUsername: '',
-                            dungeonName: run.dungeonLabel,
-                            type: 'run',
-                            runId: parseInt(runId)
-                        },
-                        btn.user.id,
-                        'party',
-                        party
-                    );
-                }
-                if (location) {
-                    await logRunInfoUpdate(
-                        btn.client,
-                        {
-                            guildId: btn.guild.id,
-                            organizerId: run.organizerId,
-                            organizerUsername: '',
-                            dungeonName: run.dungeonLabel,
-                            type: 'run',
-                            runId: parseInt(runId)
-                        },
-                        btn.user.id,
-                        'location',
-                        location
-                    );
-                }
-            } catch (e) {
-                console.error('Failed to log party/location update to raid-log:', e);
-            }
-        }
-
-        // Build confirmation message
-        let confirmMsg = '✅ Updated:';
-        if (party) confirmMsg += `\n• Party: **${party}**`;
-        if (location) confirmMsg += `\n• Location: **${location}**`;
-        if (!party && !location) confirmMsg = '✅ No changes made (both fields left blank)';
-
-        await submitted.followUp({ 
-            content: confirmMsg, 
-            ephemeral: true 
-        });
-    } catch (err) {
-        // Modal timeout or other error - no need to handle, Discord shows timeout message
+    const memberData = await fetchMemberWithRoles(submitted);
+    if (!memberData) {
+        await submitted.followUp({ content: 'Could not fetch your member information.', ephemeral: true });
+        return;
     }
-}
 
-/**
- * Handle "Set Party" button press (legacy handler, kept for backwards compatibility).
- * Shows a modal for party input, updates backend, and refreshes the public message.
- */
-export async function handleSetParty(btn: ButtonInteraction, runId: string) {
-    // Show modal for party input
-    const modal = new ModalBuilder()
-        .setCustomId(`modal:party:${runId}`)
-        .setTitle('Set Party Name');
+    const values = getModalFieldValues(submitted, ['party', 'location']);
+    const party = values.party;
+    const location = values.location;
 
-    const partyInput = new TextInputBuilder()
-        .setCustomId('party')
-        .setLabel('Party Name')
-        .setPlaceholder('e.g., USW3, EUW2, USS, etc.')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(100);
+    // Track which fields were actually updated (not empty)
+    let updatedParty = false;
+    let updatedLocation = false;
 
-    const row = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(partyInput);
-    modal.addComponents(row);
-
-    await btn.showModal(modal);
-
-    // Wait for modal submission
-    try {
-        const submitted = await btn.awaitModalSubmit({
-            time: 120000, // 2 minutes
-            filter: i => i.customId === `modal:party:${runId}` && i.user.id === btn.user.id
-        });
-
-        await submitted.deferUpdate();
-
-        const party = submitted.fields.getTextInputValue('party').trim();
-
-        // Get member for role IDs
-        if (!btn.guild) {
-            await submitted.followUp({ content: 'This command can only be used in a server.', ephemeral: true });
-            return;
-        }
-
-        const member = await btn.guild.members.fetch(btn.user.id).catch(() => null);
-        const guildId = btn.guildId!;
-
-        // Update backend
+    // Update party only if user entered a value (not empty)
+    if (party) {
         try {
             await patchJSON(`/runs/${runId}/party`, {
                 actorId: btn.user.id,
-                actorRoles: getMemberRoleIds(member),
-                party: party || ''
-            }, { guildId });
+                actorRoles: memberData.roleIds,
+                party
+            }, { guildId: guildCtx.guildId });
+            updatedParty = true;
         } catch (err) {
             if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
                 await submitted.followUp({ content: 'Only the organizer can update party.', ephemeral: true });
                 return;
             }
             const msg = err instanceof Error ? err.message : 'Unknown error';
-            await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
+            await submitted.followUp({ content: `Error updating party: ${msg}`, ephemeral: true });
             return;
         }
+    }
 
-        // Fetch updated run details
-        const run = await getJSON<{
-            channelId: string | null;
-            postMessageId: string | null;
-            status: string;
-            dungeonLabel: string;
-            organizerId: string;
-            startedAt: string | null;
-            keyWindowEndsAt: string | null;
-            party: string | null;
-            location: string | null;
-            description: string | null;
-        }>(`/runs/${runId}`);
-
-        if (!run.channelId || !run.postMessageId) {
-            await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
-            return;
-        }
-
-        // Update the public message content with party/location ONLY if run is live
-        if (run.status === 'live') {
-            const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
-            if (ch && ch.type === ChannelType.GuildText) {
-                const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
-                if (pubMsg) {
-                    let content = '@here';
-                    if (run.party && run.location) {
-                        content += ` Party: **${run.party}** | Location: **${run.location}**`;
-                    } else if (run.party) {
-                        content += ` Party: **${run.party}**`;
-                    } else if (run.location) {
-                        content += ` Location: **${run.location}**`;
-                    }
-                    await pubMsg.edit({ content });
-                }
+    // Update location only if user entered a value (not empty)
+    if (location) {
+        try {
+            await patchJSON(`/runs/${runId}/location`, {
+                actorId: btn.user.id,
+                actorRoles: memberData.roleIds,
+                location
+            }, { guildId: guildCtx.guildId });
+            updatedLocation = true;
+        } catch (err) {
+            if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+                await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
+                return;
             }
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            await submitted.followUp({ content: `Error updating location: ${msg}`, ephemeral: true });
+            return;
         }
+    }
 
-        // Log party update to raid-log
-        if (party && btn.guild) {
-            try {
+    // Fetch updated run details
+    const run = await getJSON<RunDetails>(`/runs/${runId}`);
+
+    if (!run.channelId || !run.postMessageId) {
+        await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
+        return;
+    }
+
+    // Update the public message content with party/location ONLY if run is live
+    await updatePublicRunMessage(btn, run);
+
+    // Log updates to raid-log
+    if (btn.guild) {
+        try {
+            if (updatedParty) {
                 await logRunInfoUpdate(
                     btn.client,
                     {
@@ -312,126 +166,8 @@ export async function handleSetParty(btn: ButtonInteraction, runId: string) {
                     'party',
                     party
                 );
-            } catch (e) {
-                console.error('Failed to log party update to raid-log:', e);
             }
-        }
-
-        await submitted.followUp({ 
-            content: party ? `✅ Party set to: **${party}**` : '✅ Party cleared', 
-            ephemeral: true 
-        });
-    } catch (err) {
-        // Modal timeout or other error - no need to handle, Discord shows timeout message
-    }
-}
-
-/**
- * Handle "Set Location" button press.
- * Shows a modal for location input, updates backend, and refreshes the public message.
- */
-export async function handleSetLocation(btn: ButtonInteraction, runId: string) {
-    // Show modal for location input
-    const modal = new ModalBuilder()
-        .setCustomId(`modal:location:${runId}`)
-        .setTitle('Set Location');
-
-    const locationInput = new TextInputBuilder()
-        .setCustomId('location')
-        .setLabel('Location/Server')
-        .setPlaceholder('e.g., O3, Bazaar, Realm, etc.')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(false)
-        .setMaxLength(100);
-
-    const row = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(locationInput);
-    modal.addComponents(row);
-
-    await btn.showModal(modal);
-
-    // Wait for modal submission
-    try {
-        const submitted = await btn.awaitModalSubmit({
-            time: 120000, // 2 minutes
-            filter: i => i.customId === `modal:location:${runId}` && i.user.id === btn.user.id
-        });
-
-        await submitted.deferUpdate();
-
-        const location = submitted.fields.getTextInputValue('location').trim();
-
-        // Get member for role IDs
-        if (!btn.guild) {
-            await submitted.followUp({ content: 'This command can only be used in a server.', ephemeral: true });
-            return;
-        }
-
-        if (!btn.guild) {
-            await submitted.followUp({ content: 'This command can only be used in a server.', ephemeral: true });
-            return;
-        }
-
-        const member = await btn.guild.members.fetch(btn.user.id).catch(() => null);
-        const guildId = btn.guildId!;
-
-        // Update backend
-        try {
-            await patchJSON(`/runs/${runId}/location`, {
-                actorId: btn.user.id,
-                actorRoles: getMemberRoleIds(member),
-                location: location || ''
-            }, { guildId });
-        } catch (err) {
-            if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
-                return;
-            }
-            const msg = err instanceof Error ? err.message : 'Unknown error';
-            await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
-            return;
-        }
-
-        // Fetch updated run details
-        const run = await getJSON<{
-            channelId: string | null;
-            postMessageId: string | null;
-            status: string;
-            dungeonLabel: string;
-            organizerId: string;
-            startedAt: string | null;
-            keyWindowEndsAt: string | null;
-            party: string | null;
-            location: string | null;
-            description: string | null;
-        }>(`/runs/${runId}`);
-
-        if (!run.channelId || !run.postMessageId) {
-            await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
-            return;
-        }
-
-        // Update the public message content with party/location only if the run is live
-        if (run.status === 'live') {
-            const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
-            if (ch && ch.type === ChannelType.GuildText) {
-                const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
-                if (pubMsg) {
-                    let content = '@here';
-                    if (run.party && run.location) {
-                        content += ` Party: **${run.party}** | Location: **${run.location}**`;
-                    } else if (run.party) {
-                        content += ` Party: **${run.party}**`;
-                    } else if (run.location) {
-                        content += ` Location: **${run.location}**`;
-                    }
-                    await pubMsg.edit({ content });
-                }
-            }
-        }
-
-        // Log location update to raid-log
-        if (location && btn.guild) {
-            try {
+            if (updatedLocation) {
                 await logRunInfoUpdate(
                     btn.client,
                     {
@@ -446,18 +182,212 @@ export async function handleSetLocation(btn: ButtonInteraction, runId: string) {
                     'location',
                     location
                 );
-            } catch (e) {
-                console.error('Failed to log location update to raid-log:', e);
             }
+        } catch (e) {
+            console.error('Failed to log party/location update to raid-log:', e);
         }
-
-        await submitted.followUp({ 
-            content: location ? `✅ Location set to: **${location}**` : '✅ Location cleared', 
-            ephemeral: true 
-        });
-    } catch (err) {
-        // Modal timeout or other error - no need to handle, Discord shows timeout message
     }
+
+    // Build confirmation message
+    let confirmMsg = '';
+    if (updatedParty && updatedLocation) {
+        confirmMsg = `✅ Updated:\n• Party: **${party}**\n• Location: **${location}**`;
+    } else if (updatedParty) {
+        confirmMsg = `✅ Updated party: **${party}**`;
+    } else if (updatedLocation) {
+        confirmMsg = `✅ Updated location: **${location}**`;
+    } else {
+        confirmMsg = '⚠️ No changes made (both fields left blank)';
+    }
+
+    await submitted.followUp({ 
+        content: confirmMsg, 
+        ephemeral: true 
+    });
+}
+
+/**
+ * Handle "Set Party" button press (legacy handler, kept for backwards compatibility).
+ * Shows a modal for party input, updates backend, and refreshes the public message.
+ */
+export async function handleSetParty(btn: ButtonInteraction, runId: string) {
+    const modal = createSimpleModal(
+        `modal:party:${runId}`,
+        'Set Party Name',
+        [
+            {
+                customId: 'party',
+                label: 'Party Name',
+                placeholder: 'e.g., USW3, EUW2, USS, etc.',
+                required: false,
+                maxLength: 100
+            }
+        ]
+    );
+
+    const submitted = await awaitModalSubmission(btn, modal);
+    if (!submitted) return;
+
+    await submitted.deferUpdate();
+
+    const guildCtx = await ensureGuildButtonContext(submitted);
+    if (!guildCtx) return;
+
+    const memberData = await fetchMemberWithRoles(submitted);
+    if (!memberData) {
+        await submitted.followUp({ content: 'Could not fetch your member information.', ephemeral: true });
+        return;
+    }
+
+    const values = getModalFieldValues(submitted, ['party']);
+    const party = values.party;
+
+    // Update backend
+    try {
+        await patchJSON(`/runs/${runId}/party`, {
+            actorId: btn.user.id,
+            actorRoles: memberData.roleIds,
+            party: party || ''
+        }, { guildId: guildCtx.guildId });
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await submitted.followUp({ content: 'Only the organizer can update party.', ephemeral: true });
+            return;
+        }
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
+        return;
+    }
+
+    // Fetch updated run details
+    const run = await getJSON<RunDetails>(`/runs/${runId}`);
+
+    if (!run.channelId || !run.postMessageId) {
+        await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
+        return;
+    }
+
+    // Update the public message content with party/location ONLY if run is live
+    await updatePublicRunMessage(btn, run);
+
+    // Log party update to raid-log
+    if (party && btn.guild) {
+        try {
+            await logRunInfoUpdate(
+                btn.client,
+                {
+                    guildId: btn.guild.id,
+                    organizerId: run.organizerId,
+                    organizerUsername: '',
+                    dungeonName: run.dungeonLabel,
+                    type: 'run',
+                    runId: parseInt(runId)
+                },
+                btn.user.id,
+                'party',
+                party
+            );
+        } catch (e) {
+            console.error('Failed to log party update to raid-log:', e);
+        }
+    }
+
+    await submitted.followUp({ 
+        content: party ? `✅ Party set to: **${party}**` : '✅ Party cleared', 
+        ephemeral: true 
+    });
+}
+
+/**
+ * Handle "Set Location" button press.
+ * Shows a modal for location input, updates backend, and refreshes the public message.
+ */
+export async function handleSetLocation(btn: ButtonInteraction, runId: string) {
+    const modal = createSimpleModal(
+        `modal:location:${runId}`,
+        'Set Location',
+        [
+            {
+                customId: 'location',
+                label: 'Location/Server',
+                placeholder: 'e.g., O3, Bazaar, Realm, etc.',
+                required: false,
+                maxLength: 100
+            }
+        ]
+    );
+
+    const submitted = await awaitModalSubmission(btn, modal);
+    if (!submitted) return;
+
+    await submitted.deferUpdate();
+
+    const guildCtx = await ensureGuildButtonContext(submitted);
+    if (!guildCtx) return;
+
+    const memberData = await fetchMemberWithRoles(submitted);
+    if (!memberData) {
+        await submitted.followUp({ content: 'Could not fetch your member information.', ephemeral: true });
+        return;
+    }
+
+    const values = getModalFieldValues(submitted, ['location']);
+    const location = values.location;
+
+    // Update backend
+    try {
+        await patchJSON(`/runs/${runId}/location`, {
+            actorId: btn.user.id,
+            actorRoles: memberData.roleIds,
+            location: location || ''
+        }, { guildId: guildCtx.guildId });
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
+            return;
+        }
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
+        return;
+    }
+
+    // Fetch updated run details
+    const run = await getJSON<RunDetails>(`/runs/${runId}`);
+
+    if (!run.channelId || !run.postMessageId) {
+        await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
+        return;
+    }
+
+    // Update the public message content with party/location only if the run is live
+    await updatePublicRunMessage(btn, run);
+
+    // Log location update to raid-log
+    if (location && btn.guild) {
+        try {
+            await logRunInfoUpdate(
+                btn.client,
+                {
+                    guildId: btn.guild.id,
+                    organizerId: run.organizerId,
+                    organizerUsername: '',
+                    dungeonName: run.dungeonLabel,
+                    type: 'run',
+                    runId: parseInt(runId)
+                },
+                btn.user.id,
+                'location',
+                location
+            );
+        } catch (e) {
+            console.error('Failed to log location update to raid-log:', e);
+        }
+    }
+
+    await submitted.followUp({ 
+        content: location ? `✅ Location set to: **${location}**` : '✅ Location cleared', 
+        ephemeral: true 
+    });
 }
 
 /**
@@ -465,116 +395,105 @@ export async function handleSetLocation(btn: ButtonInteraction, runId: string) {
  * Shows a modal for chain amount input, updates backend, and refreshes the public message.
  */
 export async function handleSetChainAmount(btn: ButtonInteraction, runId: string) {
-    // Show modal for chain amount input
-    const modal = new ModalBuilder()
-        .setCustomId(`modal:chain:${runId}`)
-        .setTitle('Set Chain Amount');
-
-    const chainInput = new TextInputBuilder()
-        .setCustomId('chain')
-        .setLabel('Total Chains')
-        .setPlaceholder('e.g., 5 for a 5-chain')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMinLength(1)
-        .setMaxLength(2);
-
-    const row = new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(chainInput);
-    modal.addComponents(row);
-
-    await btn.showModal(modal);
-
-    // Wait for modal submission
-    try {
-        const submitted = await btn.awaitModalSubmit({
-            time: 120000, // 2 minutes
-            filter: i => i.customId === `modal:chain:${runId}` && i.user.id === btn.user.id
-        });
-
-        await submitted.deferUpdate();
-
-        const chainStr = submitted.fields.getTextInputValue('chain').trim();
-        const chainAmount = parseInt(chainStr);
-
-        // Validate input
-        if (isNaN(chainAmount) || chainAmount < 1 || chainAmount > 99) {
-            await submitted.followUp({ 
-                content: '❌ Chain amount must be a number between 1 and 99', 
-                ephemeral: true 
-            });
-            return;
-        }
-
-        // Get member for role IDs
-        if (!btn.guild) {
-            await submitted.followUp({ content: 'This command can only be used in a server.', ephemeral: true });
-            return;
-        }
-
-        const member = await btn.guild.members.fetch(btn.user.id).catch(() => null);
-        const guildId = btn.guildId!;
-
-        // Update backend
-        try {
-            await patchJSON(`/runs/${runId}/chain-amount`, {
-                actorId: btn.user.id,
-                actorRoles: getMemberRoleIds(member),
-                chainAmount
-            }, { guildId });
-        } catch (err) {
-            if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                await submitted.followUp({ content: 'Only the organizer can set chain amount.', ephemeral: true });
-                return;
+    const modal = createSimpleModal(
+        `modal:chain:${runId}`,
+        'Set Chain Amount',
+        [
+            {
+                customId: 'chain',
+                label: 'Total Chains',
+                placeholder: 'e.g., 5 for a 5-chain',
+                required: true,
+                minLength: 1,
+                maxLength: 2
             }
-            const msg = err instanceof Error ? err.message : 'Unknown error';
-            await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
-            return;
-        }
+        ]
+    );
 
-        // Fetch updated run details
-        const run = await getJSON<{
-            channelId: string | null;
-            postMessageId: string | null;
-            status: string;
-            dungeonLabel: string;
-            dungeonKey: string;
-            organizerId: string;
-            keyPopCount: number;
-            chainAmount: number | null;
-            keyWindowEndsAt: string | null;
-        }>(`/runs/${runId}`);
+    const submitted = await awaitModalSubmission(btn, modal);
+    if (!submitted) return;
 
-        if (!run.channelId || !run.postMessageId) {
-            await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
-            return;
-        }
+    await submitted.deferUpdate();
 
-        // Update public message title to include chain tracking
-        const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
-        if (ch && ch.type === ChannelType.GuildText) {
-            const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
-            if (pubMsg) {
-                const embeds = pubMsg.embeds ?? [];
-                if (embeds.length > 0) {
-                    const embed = EmbedBuilder.from(embeds[0]);
-                    
-                    // Build title with chain tracking
-                    const statusEmoji = run.status === 'live' ? '🟢' : '📋';
-                    const statusText = run.status === 'live' ? 'LIVE' : 'Starting';
-                    const chainText = run.chainAmount ? ` | Chain ${run.keyPopCount}/${run.chainAmount}` : '';
-                    embed.setTitle(`${statusEmoji} ${statusText}: ${run.dungeonLabel}${chainText}`);
-                    
-                    await pubMsg.edit({ embeds: [embed, ...embeds.slice(1)] });
-                }
-            }
-        }
+    const values = getModalFieldValues(submitted, ['chain']);
+    const chainStr = values.chain;
+    const chainAmount = parseInt(chainStr);
 
+    // Validate input
+    if (isNaN(chainAmount) || chainAmount < 1 || chainAmount > 99) {
         await submitted.followUp({ 
-            content: `✅ Chain amount set to: **${chainAmount}**\n\nThe raid title will now show "Chain 0/${chainAmount}" (updates as you press Key popped)`, 
+            content: '❌ Chain amount must be a number between 1 and 99', 
             ephemeral: true 
         });
-    } catch (err) {
-        // Modal timeout or other error - no need to handle, Discord shows timeout message
+        return;
     }
-}
 
+    const guildCtx = await ensureGuildButtonContext(submitted);
+    if (!guildCtx) return;
+
+    const memberData = await fetchMemberWithRoles(submitted);
+    if (!memberData) {
+        await submitted.followUp({ content: 'Could not fetch your member information.', ephemeral: true });
+        return;
+    }
+
+    // Update backend
+    try {
+        await patchJSON(`/runs/${runId}/chain-amount`, {
+            actorId: btn.user.id,
+            actorRoles: memberData.roleIds,
+            chainAmount
+        }, { guildId: guildCtx.guildId });
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await submitted.followUp({ content: 'Only the organizer can set chain amount.', ephemeral: true });
+            return;
+        }
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await submitted.followUp({ content: `Error: ${msg}`, ephemeral: true });
+        return;
+    }
+
+    // Fetch updated run details
+    const run = await getJSON<{
+        channelId: string | null;
+        postMessageId: string | null;
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+        keyPopCount: number;
+        chainAmount: number | null;
+        keyWindowEndsAt: string | null;
+    }>(`/runs/${runId}`);
+
+    if (!run.channelId || !run.postMessageId) {
+        await submitted.followUp({ content: 'Run record missing channel/message id.', ephemeral: true });
+        return;
+    }
+
+    // Update public message title to include chain tracking
+    const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
+    if (ch && ch.type === ChannelType.GuildText) {
+        const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
+        if (pubMsg) {
+            const embeds = pubMsg.embeds ?? [];
+            if (embeds.length > 0) {
+                const embed = EmbedBuilder.from(embeds[0]);
+                
+                // Build title with chain tracking
+                const statusEmoji = run.status === 'live' ? '🟢' : '📋';
+                const statusText = run.status === 'live' ? 'LIVE' : 'Starting';
+                const chainText = run.chainAmount ? ` | Chain ${run.keyPopCount}/${run.chainAmount}` : '';
+                embed.setTitle(`${statusEmoji} ${statusText}: ${run.dungeonLabel}${chainText}`);
+                
+                await pubMsg.edit({ embeds: [embed, ...embeds.slice(1)] });
+            }
+        }
+    }
+
+    await submitted.followUp({ 
+        content: `✅ Chain amount set to: **${chainAmount}**\n\nThe raid title will now show "Chain 0/${chainAmount}" (updates as you press Key popped)`, 
+        ephemeral: true 
+    });
+}

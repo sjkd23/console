@@ -15,7 +15,7 @@ import {
 import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, getGuildChannels, BackendError } from '../../../lib/utilities/http.js';
 import { DUNGEON_DATA } from '../../../constants/dungeons/DungeonData.js';
 import { updateQuotaPanel } from '../../../lib/ui/quota-panel.js';
-import { formatPoints } from '../../../lib/formatting/format-helpers.js';
+import { formatPoints } from '../../../lib/utilities/format-helpers.js';
 import { buildQuotaConfigPanel } from '../../../lib/ui/quota-config-panel.js';
 
 /**

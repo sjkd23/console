@@ -16,7 +16,7 @@ import {
 import { getRaiderPointsConfig, setRaiderPoints, deleteRaiderPoints, BackendError } from '../../../lib/utilities/http.js';
 import { DUNGEON_DATA } from '../../../constants/dungeons/DungeonData.js';
 import { buildConfigPointsPanel } from '../../../lib/ui/configpoints-panel.js';
-import { formatPoints } from '../../../lib/formatting/format-helpers.js';
+import { formatPoints } from '../../../lib/utilities/format-helpers.js';
 
 /**
  * Helper function to build the dungeon selection dropdown panel

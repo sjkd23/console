@@ -10,12 +10,12 @@ import type { SlashCommand } from '../_types.js';
 import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
 import { postJSON } from '../../lib/utilities/http.js';
 import { dungeonByCode } from '../../constants/dungeons/dungeon-helpers.js';
-import { addRecentDungeon } from '../../lib/dungeon/dungeon-cache.js';
+import { addRecentDungeon } from '../../lib/utilities/dungeon-cache.js';
 import { updateQuotaPanelsForUser } from '../../lib/ui/quota-panel.js';
 import { ensureGuildContext, fetchGuildMember } from '../../lib/utilities/interaction-helpers.js';
 import { formatErrorMessage } from '../../lib/errors/error-handler.js';
-import { handleDungeonAutocomplete } from '../../lib/dungeon/dungeon-autocomplete.js';
-import { formatPoints } from '../../lib/formatting/format-helpers.js';
+import { handleDungeonAutocomplete } from '../../lib/utilities/dungeon-autocomplete.js';
+import { formatPoints } from '../../lib/utilities/format-helpers.js';
 import { logCommandExecution } from '../../lib/logging/bot-logger.js';
 
 /**

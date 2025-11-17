@@ -59,10 +59,15 @@ async function makeRequest<T>(method: string, path: string, body?: any, ctx?: Re
     
     logger.debug('API request starting', { requestId, method, path, guildId: ctx?.guildId });
     
+    // Create abort controller for timeout (25s to leave buffer before Discord's 30s limit)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    
     try {
         const options: RequestInit = { 
             method, 
-            headers: headers(requestId, ctx)
+            headers: headers(requestId, ctx),
+            signal: controller.signal
         };
         
         if (body !== undefined) {
@@ -81,9 +86,28 @@ async function makeRequest<T>(method: string, path: string, body?: any, ctx?: Re
             guildId: ctx?.guildId
         });
         
+        clearTimeout(timeoutId);
         return handle(res, requestId) as Promise<T>;
     } catch (err) {
+        clearTimeout(timeoutId);
         const duration = Date.now() - start;
+        
+        // Check if this was a timeout/abort
+        if (err instanceof Error && err.name === 'AbortError') {
+            logger.error('API request timed out', {
+                requestId,
+                method,
+                path,
+                duration,
+                guildId: ctx?.guildId
+            });
+            throw new BackendError(
+                'Request to backend timed out. The server may be overloaded.',
+                'TIMEOUT',
+                undefined,
+                requestId
+            );
+        }
         
         if (err instanceof BackendError) {
             logger.warn('API request failed with backend error', { 

@@ -6,7 +6,7 @@ import {
     ButtonStyle,
 } from 'discord.js';
 import { getRaiderPointsConfig, getKeyPopPointsConfig, BackendError } from '../utilities/http.js';
-import { formatPoints } from '../formatting/format-helpers.js';
+import { formatPoints } from '../utilities/format-helpers.js';
 
 /**
  * Build the /configpoints main panel embed and buttons

@@ -17,8 +17,16 @@ if (!connectionString) {
     throw new Error('Database connection string is not configured');
 }
 
+// Pool configuration optimized for single VPS deployment (~2 vCPU / 4GB RAM)
+// Connection pool sizing follows PostgreSQL best practices:
+// - max = 10 connections (sufficient for bot + scheduled tasks + manual queries)
+// - idleTimeoutMillis = 30s (release idle connections quickly)
+// - connectionTimeoutMillis = 5s (fail fast if pool exhausted)
 export const pool = new Pool({
     connectionString,
+    max: 10, // Maximum number of connections in the pool
+    idleTimeoutMillis: 30000, // Close idle connections after 30s
+    connectionTimeoutMillis: 5000, // Timeout if no connection available within 5s
     // optional: ssl: { rejectUnauthorized: false }
 });
 
@@ -28,18 +36,23 @@ export async function query<T extends import('pg').QueryResultRow = any>(text: s
     const queryId = randomUUID().slice(0, 8);
     const start = Date.now();
     
-    // Log query start (debug level to avoid noise in production)
-    logger.debug({ 
-        queryId, 
-        sql: text.substring(0, 200), // Truncate long queries for readability
-        paramCount: params?.length || 0 
-    }, 'Executing database query');
+    // Only log queries in development or if slow
+    // This reduces log spam in production while maintaining visibility for performance issues
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (isDev) {
+        logger.debug({ 
+            queryId, 
+            sql: text.substring(0, 200), // Truncate long queries for readability
+            paramCount: params?.length || 0 
+        }, 'Executing database query');
+    }
     
     try {
         const res = await pool.query<T>(text, params);
         const duration = Date.now() - start;
         
-        // Log slow queries at warn level
+        // Log slow queries at warn level (production-visible)
         if (duration > SLOW_QUERY_THRESHOLD_MS) {
             logger.warn({ 
                 queryId, 
@@ -47,8 +60,8 @@ export async function query<T extends import('pg').QueryResultRow = any>(text: s
                 rowCount: res.rowCount,
                 sql: text.substring(0, 200)
             }, 'Slow query detected');
-        } else {
-            // Log successful queries at debug level
+        } else if (isDev) {
+            // Log successful queries at debug level (dev only)
             logger.debug({ 
                 queryId, 
                 duration, 
@@ -60,7 +73,7 @@ export async function query<T extends import('pg').QueryResultRow = any>(text: s
     } catch (err) {
         const duration = Date.now() - start;
         
-        // Log errors at error level with full context
+        // Log errors at error level with full context (always visible)
         logger.error({ 
             queryId, 
             duration,

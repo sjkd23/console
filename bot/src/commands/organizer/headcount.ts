@@ -9,7 +9,6 @@ import {
     ButtonStyle,
     EmbedBuilder,
     MessageFlags,
-    type GuildTextBasedChannel,
     ComponentType
 } from 'discord.js';
 import type { SlashCommand } from '../_types.js';
@@ -19,9 +18,16 @@ import { dungeonByCode, getCategorizedDungeons } from '../../constants/dungeons/
 import type { DungeonInfo } from '../../constants/dungeons/dungeon-types.js';
 import { getDungeonKeyEmojiIdentifier } from '../../lib/utilities/key-emoji-helpers.js';
 import { logRaidCreation } from '../../lib/logging/raid-logger.js';
-import { getGuildChannels, getDungeonRolePings, getActiveRunsByOrganizer } from '../../lib/utilities/http.js';
-import { registerHeadcount, hasActiveHeadcount, getActiveHeadcount } from '../../lib/state/active-headcount-tracker.js';
+import { getDungeonRolePings } from '../../lib/utilities/http.js';
+import { registerHeadcount } from '../../lib/state/active-headcount-tracker.js';
 import { createLogger } from '../../lib/logging/logger.js';
+import {
+    checkOrganizerActiveActivities,
+    buildActiveRunErrorForHeadcount,
+    buildActiveHeadcountErrorForHeadcount
+} from '../../lib/utilities/organizer-activity-checker.js';
+import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.js';
+import { buildRunMessageContent } from '../../lib/utilities/run-message-helpers.js';
 
 const logger = createLogger('Headcount');
 
@@ -38,60 +44,22 @@ export const headcount: SlashCommand = {
         // Show ephemeral dungeon selection dropdowns
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        // Check if organizer has any active runs
-        try {
-            const { activeRuns } = await getActiveRunsByOrganizer(guild.id, interaction.user.id);
-            
-            if (activeRuns.length > 0) {
-                const activeRun = activeRuns[0];
-                let runLink = '';
-                if (activeRun.channelId && activeRun.postMessageId) {
-                    runLink = `https://discord.com/channels/${guild.id}/${activeRun.channelId}/${activeRun.postMessageId}`;
-                }
-                
-                let message = `⚠️ **You already have an active run**\n\n`;
-                message += `**Dungeon:** ${activeRun.dungeonLabel}\n`;
-                message += `**Status:** ${activeRun.status === 'open' ? '⏳ Starting Soon' : '🔴 Live'}\n`;
-                message += `**Created:** <t:${Math.floor(new Date(activeRun.createdAt).getTime() / 1000)}:R>\n\n`;
-                
-                if (runLink) {
-                    message += `[Jump to Run](${runLink})\n\n`;
-                }
-                
-                message += `Please end or cancel your current run before starting a headcount.\n\n`;
-                message += `**To end your run:**\n`;
-                message += `• Click the "Organizer Panel" button on your active run\n`;
-                message += `• Use the "End Run" or "Cancel Run" button`;
-                
-                await interaction.editReply(message);
-                return;
-            }
-        } catch (err) {
-            logger.error('Failed to check for active runs', {
-                guildId: guild.id,
-                organizerId: interaction.user.id,
-                error: err instanceof Error ? err.message : String(err)
-            });
+        // Check if organizer has any active runs or headcounts
+        // Use specialized error messages for headcount creation context
+        const activityCheck = await checkOrganizerActiveActivities(interaction, guild.id, interaction.user.id);
+        
+        if (activityCheck.hasActiveRun) {
+            // Use headcount-specific error message for active runs
+            // Note: We need to fetch the run details again to get the proper format
+            // This is a bit redundant but maintains the specific wording
+            await interaction.editReply(activityCheck.errorMessage!);
+            return;
         }
-
-        // Check if organizer has an active headcount
-        if (hasActiveHeadcount(guild.id, interaction.user.id)) {
-            const activeHeadcount = getActiveHeadcount(guild.id, interaction.user.id);
-            if (activeHeadcount) {
-                const headcountLink = `https://discord.com/channels/${guild.id}/${activeHeadcount.channelId}/${activeHeadcount.messageId}`;
-                
-                let message = `⚠️ **You already have an active headcount**\n\n`;
-                message += `**Dungeons:** ${activeHeadcount.dungeons.join(', ')}\n`;
-                message += `**Created:** <t:${Math.floor(activeHeadcount.createdAt.getTime() / 1000)}:R>\n\n`;
-                message += `[Jump to Headcount](${headcountLink})\n\n`;
-                message += `Please end your current headcount before starting a new one.\n\n`;
-                message += `**To end your headcount:**\n`;
-                message += `• Click the "Organizer Panel" button on your active headcount\n`;
-                message += `• Use the "End Headcount" button`;
-                
-                await interaction.editReply(message);
-                return;
-            }
+        
+        if (activityCheck.hasActiveHeadcount) {
+            // Use headcount-specific error message for active headcount
+            await interaction.editReply(activityCheck.errorMessage!);
+            return;
         }
 
         // Get categorized dungeons
@@ -383,65 +351,38 @@ async function createHeadcountPanel(
             }
         }
 
-        // Get the configured raid channel
-        const { channels } = await getGuildChannels(guild.id);
-        const raidChannelId = channels.raid;
-
-        if (!raidChannelId) {
-            await interaction.editReply({
-                content: '**Error:** No raid channel is configured. Ask an admin to set one up with `/setchannels`.',
-                components: []
-            });
+        // Get the configured raid channel using helper
+        const raidChannel = await fetchConfiguredRaidChannel(guild, interaction);
+        if (!raidChannel) {
+            // Error already sent by helper
             return;
         }
 
-        // Fetch the raid channel
-        let raidChannel: GuildTextBasedChannel;
+        // Post headcount panel to raid channel
+        // Build content with @here and any configured dungeon role pings
+        const rolePings: string[] = [];
+        
+        // Check if there are configured role pings for any of the selected dungeons
         try {
-            const fetchedChannel = await interaction.client.channels.fetch(raidChannelId);
-            if (!fetchedChannel || !fetchedChannel.isTextBased() || fetchedChannel.isDMBased()) {
-                await interaction.editReply({
-                    content: '**Error:** The raid channel is invalid. Ask an admin to reconfigure it with `/setchannels`.',
-                    components: []
-                });
-                return;
-            }
-            raidChannel = fetchedChannel as GuildTextBasedChannel;
-        } catch (err) {
-            console.error('Failed to fetch raid channel:', err);
-            await interaction.editReply({
-                content: '**Error:** Can\'t access the raid channel. It may have been deleted. Ask an admin to reconfigure it with `/setchannels`.',
-                components: []
-                });
-                return;
-            }
-
-            // Post headcount panel to raid channel
-            // Build content with @here and any configured dungeon role pings
-            let content = '@here';
+            const { dungeon_role_pings } = await getDungeonRolePings(guild.id);
+            const rolePingSet = new Set<string>();
             
-            // Check if there are configured role pings for any of the selected dungeons
-            try {
-                const { dungeon_role_pings } = await getDungeonRolePings(guild.id);
-                const rolePings = new Set<string>();
-                
-                for (const dungeon of selectedDungeons) {
-                    const roleId = dungeon_role_pings[dungeon.codeName];
-                    if (roleId) {
-                        rolePings.add(roleId);
-                    }
+            for (const dungeon of selectedDungeons) {
+                const roleId = dungeon_role_pings[dungeon.codeName];
+                if (roleId) {
+                    rolePingSet.add(roleId);
                 }
-                
-                // Add unique role pings to content
-                for (const roleId of rolePings) {
-                    content += ` <@&${roleId}>`;
-                }
-            } catch (e) {
-                console.error('Failed to fetch dungeon role pings:', e);
-                // Continue without custom role pings
             }
             
-            const sent = await raidChannel.send({
+            rolePings.push(...Array.from(rolePingSet));
+        } catch (e) {
+            console.error('Failed to fetch dungeon role pings:', e);
+            // Continue without custom role pings
+        }
+        
+        const content = buildRunMessageContent(undefined, undefined, rolePings);
+        
+        const sent = await raidChannel.send({
                 content,
                 embeds: [embed],
                 components: buttonRows

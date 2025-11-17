@@ -6,7 +6,7 @@ import {
 } from 'discord.js';
 import { getQuotaLeaderboard, getGuildChannels, updateQuotaRoleConfig, getJSON } from '../utilities/http.js';
 import { createLogger } from '../logging/logger.js';
-import { formatPoints } from '../formatting/format-helpers.js';
+import { formatPoints } from '../utilities/format-helpers.js';
 
 const logger = createLogger('QuotaPanel');
 

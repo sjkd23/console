@@ -73,14 +73,14 @@ import {
 import {
     handleModmailConfirm,
     handleModmailCancel,
-} from './commands/moderation/security/modmail.js';
+} from './commands/moderation/modmail.js';
 import { handleModmailClose } from './interactions/buttons/modmail/modmail-close.js';
 import { startScheduledTasks } from './lib/tasks/scheduled-tasks.js';
 import { syncTeamRoleForMember } from './lib/team/team-role-manager.js';
 import { logCommandExecution, createSuccessResult, createErrorResult } from './lib/logging/command-logging.js';
 import { BackendError } from './lib/utilities/http.js';
 import { applyButtonRateLimit } from './lib/utilities/rate-limit-middleware.js';
-import { safeHandleInteraction } from './lib/interactions/safe-handle-interaction.js';
+import { safeHandleInteraction } from './lib/utilities/safe-handle-interaction.js';
 
 const client = new Client({
     intents: [

@@ -43,6 +43,7 @@ interface TaskStats {
     successCount: number;
     failureCount: number;
     consecutiveFailures: number;
+    isRunning: boolean; // Track if task is currently executing
 }
 
 // ============================================================================
@@ -70,9 +71,13 @@ async function checkExpiredRuns(client: Client): Promise<void> {
     let successCount = 0;
     let failureCount = 0;
 
-    // Process each expired run
-    for (const run of expired) {
-        try {
+    // Process expired runs in batches to avoid CPU spikes with large numbers
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < expired.length; i += BATCH_SIZE) {
+        const batch = expired.slice(i, i + BATCH_SIZE);
+        
+        // Process batch in parallel (within reasonable limits)
+        const results = await Promise.allSettled(batch.map(async (run) => {
             // Get the guild
             const guild = client.guilds.cache.get(run.guild_id);
             if (!guild) {
@@ -80,8 +85,7 @@ async function checkExpiredRuns(client: Client): Promise<void> {
                     guildId: run.guild_id, 
                     runId: run.id 
                 });
-                failureCount++;
-                continue;
+                throw new Error('Guild not found');
             }
 
             // End the run via the API
@@ -98,8 +102,6 @@ async function checkExpiredRuns(client: Client): Promise<void> {
                 guildName: guild.name,
                 autoEndMinutes: run.auto_end_minutes
             });
-
-            successCount++;
 
             // Delete the run role if it exists
             if (run.role_id) {
@@ -157,12 +159,18 @@ async function checkExpiredRuns(client: Client): Promise<void> {
                     });
                 }
             }
-        } catch (err) {
-            failureCount++;
-            logger.error(`Failed to auto-end run`, { 
-                runId: run.id, 
-                err 
-            });
+        }));
+        
+        // Count successes and failures
+        for (const result of results) {
+            if (result.status === 'fulfilled') {
+                successCount++;
+            } else {
+                failureCount++;
+                logger.error('Failed to process expired run in batch', {
+                    error: result.reason
+                });
+            }
         }
     }
 
@@ -498,7 +506,8 @@ export function startScheduledTasks(client: Client): () => void {
             lastRun: null,
             successCount: 0,
             failureCount: 0,
-            consecutiveFailures: 0
+            consecutiveFailures: 0,
+            isRunning: false
         });
     });
 
@@ -534,6 +543,17 @@ export function startScheduledTasks(client: Client): () => void {
         const intervalId = setInterval(async () => {
             const stats = taskStats.get(task.name)!;
             
+            // Overlap protection: skip if previous execution still running
+            if (stats.isRunning) {
+                logger.warn(`${task.name} is still running, skipping this execution`, {
+                    intervalMinutes: task.intervalMinutes,
+                    lastRun: stats.lastRun
+                });
+                return;
+            }
+            
+            stats.isRunning = true;
+            
             try {
                 await wrappedHandler(client);
                 stats.lastRun = new Date();
@@ -551,6 +571,8 @@ export function startScheduledTasks(client: Client): () => void {
                         lastRun: stats.lastRun
                     });
                 }
+            } finally {
+                stats.isRunning = false;
             }
         }, intervalMs);
         

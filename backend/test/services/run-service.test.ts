@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { endRunWithTransaction } from '../../src/services/run-service.js';
+import { endRunWithTransaction } from '../../src/lib/services/run-service.js';
 import { query } from '../../src/db/pool.js';
 import {
   cleanDatabase,

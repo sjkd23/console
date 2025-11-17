@@ -6,7 +6,7 @@ import {
     ButtonStyle,
 } from 'discord.js';
 import { getQuotaRoleConfig, BackendError } from '../utilities/http.js';
-import { formatPoints } from '../formatting/format-helpers.js';
+import { formatPoints } from '../utilities/format-helpers.js';
 
 /**
  * Build the /configquota main panel embed and buttons

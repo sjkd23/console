@@ -8,8 +8,8 @@ import { hasInternalRole, authorizeRunActor, buildRunActorContext, RunRow } from
 import { snapshotRaidersAtKeyPop } from '../../lib/quota/quota.js';
 import { ensureMemberExists } from '../../lib/database/database-helpers.js';
 import { createLogger } from '../../lib/logging/logger.js';
-import { createRunWithTransaction, endRunWithTransaction } from '../../services/run-service.js';
-import { QuotaService } from '../../services/quota-service.js';
+import { createRunWithTransaction, endRunWithTransaction } from '../../lib/services/run-service.js';
+import { QuotaService } from '../../lib/services/quota-service.js';
 import { RAID_BEHAVIOR } from '../../config/raid-config.js';
 
 const logger = createLogger('Runs');

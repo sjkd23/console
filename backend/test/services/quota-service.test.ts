@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { QuotaService } from '../../src/services/quota-service.js';
+import { QuotaService } from '../../src/lib/services/quota-service.js';
 import { query } from '../../src/db/pool.js';
 import {
   cleanDatabase,
