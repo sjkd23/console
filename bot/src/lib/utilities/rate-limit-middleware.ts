@@ -132,6 +132,11 @@ function determineButtonRateLimit(identifier: string): RateLimitConfig {
         return RateLimitPresets.BUTTON_KEY_POPPED;
     }
 
+    // Ping raiders button - prevent spam pinging
+    if (identifier === 'run:ping') {
+        return RateLimitPresets.BUTTON_PING_RAIDERS;
+    }
+
     // Verification buttons - strict
     if (identifier.startsWith('verification:')) {
         return RateLimitPresets.BUTTON_VERIFICATION;

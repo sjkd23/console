@@ -498,7 +498,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
             if (action === 'ping') {
-                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
+                if (!await applyButtonRateLimit(interaction, 'run:ping')) return;
                 await safeHandleInteraction(interaction, () => handlePingRaiders(interaction, runId), { ephemeral: true });
                 return;
             }

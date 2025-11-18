@@ -124,6 +124,13 @@ export const RateLimitPresets = {
         windowMs: 20_000,
         errorMessage: '⏱️ **Key pop cooldown active.** You can only pop a key once every 20 seconds to prevent accidents.'
     } as RateLimitConfig,
+
+    /** Ping raiders button - prevent spam pinging (1 per 20s) */
+    BUTTON_PING_RAIDERS: {
+        maxRequests: 1,
+        windowMs: 20_000,
+        errorMessage: '⏱️ **Ping cooldown active.** You can only ping raiders once every 20 seconds to prevent spam.'
+    } as RateLimitConfig,
 } as const;
 
 /**
