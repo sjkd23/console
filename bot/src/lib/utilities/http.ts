@@ -1,7 +1,9 @@
 // bot/src/lib/http.ts
 import { randomUUID } from 'crypto';
+import { Client } from 'discord.js';
 import { botConfig } from '../../config.js';
 import { createLogger } from '../logging/logger.js';
+import { updateQuotaPanelsForUser } from '../ui/quota-panel.js';
 
 const BASE = botConfig.BACKEND_URL;
 const API_KEY = botConfig.BACKEND_API_KEY;
@@ -654,6 +656,12 @@ export async function updateQuotaRoleConfig(
         moderation_points?: number;
         base_exalt_points?: number;
         base_non_exalt_points?: number;
+        verify_points?: number;
+        warn_points?: number;
+        suspend_points?: number;
+        modmail_reply_points?: number;
+        editname_points?: number;
+        addnote_points?: number;
     }
 ): Promise<{
     config: {
@@ -665,6 +673,12 @@ export async function updateQuotaRoleConfig(
         moderation_points: number;
         base_exalt_points: number;
         base_non_exalt_points: number;
+        verify_points: number;
+        warn_points: number;
+        suspend_points: number;
+        modmail_reply_points: number;
+        editname_points: number;
+        addnote_points: number;
     };
     dungeon_overrides: Record<string, number>;
 }> {
@@ -724,13 +738,14 @@ export async function getQuotaLeaderboard(
     return postJSON(`/quota/leaderboard/${guildId}/${roleId}`, { member_user_ids: memberUserIds });
 }
 
-/** Award moderation points for verification activities (POST /quota/award-moderation-points/:guild_id/:user_id) */
+/** Award moderation points for moderation activities (POST /quota/award-moderation-points/:guild_id/:user_id) */
 export async function awardModerationPoints(
     guildId: string,
     userId: string,
     payload: {
         actor_user_id: string;
         actor_roles?: string[];
+        command_type?: 'verify' | 'warn' | 'suspend' | 'modmail_reply' | 'editname' | 'addnote';
     }
 ): Promise<{
     points_awarded: number;
@@ -738,6 +753,53 @@ export async function awardModerationPoints(
     message?: string;
 }> {
     return postJSON(`/quota/award-moderation-points/${guildId}/${userId}`, payload);
+}
+
+/**
+ * Award moderation points and immediately update the user's quota panels.
+ * This is a convenience wrapper that combines point awarding with instant panel updates,
+ * ensuring changes are visible immediately on quota leaderboards.
+ * 
+ * Use this function instead of calling awardModerationPoints directly to follow DRY principles
+ * and ensure consistent behavior across all point-awarding operations.
+ * 
+ * @param client - Discord client instance
+ * @param guildId - Guild ID where points are being awarded
+ * @param userId - User ID receiving the points (the actor performing the moderation action)
+ * @param payload - Award payload including actor info and command type
+ * @returns The result from awardModerationPoints
+ */
+export async function awardModerationPointsWithUpdate(
+    client: Client,
+    guildId: string,
+    userId: string,
+    payload: {
+        actor_user_id: string;
+        actor_roles?: string[];
+        command_type?: 'verify' | 'warn' | 'suspend' | 'modmail_reply' | 'editname' | 'addnote';
+    }
+): Promise<{
+    points_awarded: number;
+    roles_awarded?: number;
+    message?: string;
+}> {
+    // Award the points via API
+    const result = await awardModerationPoints(guildId, userId, payload);
+    
+    // If points were actually awarded, update the user's quota panels
+    if (result.points_awarded > 0) {
+        // Don't await - update panels in background to avoid blocking the command response
+        updateQuotaPanelsForUser(client, guildId, userId).catch(err => {
+            logger.error('Failed to update quota panels after awarding points', {
+                guildId,
+                userId,
+                pointsAwarded: result.points_awarded,
+                error: err instanceof Error ? err.message : String(err)
+            });
+        });
+    }
+    
+    return result;
 }
 
 /** Get raider points configuration for all dungeons (GET /quota/raider-points/:guild_id) */

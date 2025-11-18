@@ -27,6 +27,12 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
         moderation_points: number;
         base_exalt_points?: number;
         base_non_exalt_points?: number;
+        verify_points?: number;
+        warn_points?: number;
+        suspend_points?: number;
+        modmail_reply_points?: number;
+        editname_points?: number;
+        addnote_points?: number;
     } | null = null;
     let dungeonOverrides: Record<string, number> = {};
     
@@ -70,10 +76,46 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
         embed.addFields(
             { name: '🎯 Required Points', value: formatPoints(config.required_points), inline: true },
             { name: '📅 Resets', value: `<t:${resetTimestamp}:F>\n(<t:${resetTimestamp}:R>)`, inline: true },
-            { name: '✅ Moderation Points', value: formatPoints(config.moderation_points), inline: true },
+            { name: '\u200b', value: '\u200b', inline: true }, // Spacer for proper layout
             { name: '⚔️ Base Exalt Points', value: formatPoints(baseExaltPoints), inline: true },
             { name: '🗡️ Base Non-Exalt Points', value: formatPoints(baseNonExaltPoints), inline: true }
         );
+
+        // Build moderation points summary
+        const modCommandPoints: string[] = [];
+        if (config.verify_points && config.verify_points > 0) {
+            modCommandPoints.push(`Verify: ${formatPoints(config.verify_points)}`);
+        }
+        if (config.warn_points && config.warn_points > 0) {
+            modCommandPoints.push(`Warn: ${formatPoints(config.warn_points)}`);
+        }
+        if (config.suspend_points && config.suspend_points > 0) {
+            modCommandPoints.push(`Suspend: ${formatPoints(config.suspend_points)}`);
+        }
+        if (config.modmail_reply_points && config.modmail_reply_points > 0) {
+            modCommandPoints.push(`Modmail: ${formatPoints(config.modmail_reply_points)}`);
+        }
+        if (config.editname_points && config.editname_points > 0) {
+            modCommandPoints.push(`Editname: ${formatPoints(config.editname_points)}`);
+        }
+        if (config.addnote_points && config.addnote_points > 0) {
+            modCommandPoints.push(`Addnote: ${formatPoints(config.addnote_points)}`);
+        }
+        
+        // Fallback to old moderation_points if no individual commands are set
+        if (modCommandPoints.length === 0 && config.moderation_points > 0) {
+            modCommandPoints.push(`All: ${formatPoints(config.moderation_points)}`);
+        }
+
+        const modPointsValue = modCommandPoints.length > 0 
+            ? modCommandPoints.join(', ') 
+            : 'None configured';
+        
+        embed.addFields({
+            name: '✅ Moderation Command Points',
+            value: modPointsValue,
+            inline: false
+        });
 
         // Show dungeon overrides if any
         if (Object.keys(dungeonOverrides).length > 0) {

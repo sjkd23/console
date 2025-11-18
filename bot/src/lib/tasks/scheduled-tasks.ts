@@ -3,7 +3,7 @@ import { Client, EmbedBuilder, type GuildTextBasedChannel, type TextChannel } fr
 import { getJSON, patchJSON, postJSON } from '../utilities/http.js';
 import { createLogger } from '../logging/logger.js';
 import { deleteRunRole } from '../utilities/run-role-manager.js';
-import { updateQuotaPanelsForUser } from '../ui/quota-panel.js';
+import { updateQuotaPanelsForUser, updateAllQuotaPanels } from '../ui/quota-panel.js';
 
 const logger = createLogger('ScheduledTasks');
 
@@ -468,6 +468,80 @@ async function cleanupOrphanedRunRoles(client: Client): Promise<void> {
     }
 }
 
+/**
+ * Update all quota leaderboard panels
+ * This runs periodically to refresh quota panels with current member points and progress.
+ * Updates panels in all guilds where quota tracking is configured.
+ */
+async function updateQuotaPanels(client: Client): Promise<void> {
+    logger.debug('Starting quota panels update');
+    
+    let totalGuilds = 0;
+    let totalPanels = 0;
+    let totalFailed = 0;
+    
+    // Process each guild the bot is in
+    for (const [guildId, guild] of client.guilds.cache) {
+        try {
+            totalGuilds++;
+            
+            // Fetch all quota configs for this guild
+            const configs = await getJSON<{
+                configs: Array<{
+                    guild_id: string;
+                    discord_role_id: string;
+                    required_points: number;
+                    reset_at: string;
+                    panel_message_id: string | null;
+                }>;
+            }>(`/quota/configs/${guildId}`);
+            
+            // Only update panels that have a message_id (i.e., panels that exist)
+            const activePanels = configs.configs.filter(c => c.panel_message_id);
+            
+            if (activePanels.length === 0) {
+                logger.debug('No active quota panels for guild', { 
+                    guildId, 
+                    guildName: guild.name 
+                });
+                continue;
+            }
+            
+            logger.debug(`Updating ${activePanels.length} quota panels for guild`, {
+                guildId,
+                guildName: guild.name
+            });
+            
+            // Update all panels for this guild
+            await updateAllQuotaPanels(client, guildId);
+            totalPanels += activePanels.length;
+            
+            logger.info('Updated quota panels for guild', {
+                guildId,
+                guildName: guild.name,
+                panelCount: activePanels.length
+            });
+        } catch (err) {
+            totalFailed++;
+            logger.error('Failed to update quota panels for guild', {
+                guildId,
+                guildName: guild.name,
+                error: err instanceof Error ? err.message : String(err)
+            });
+        }
+    }
+    
+    if (totalPanels > 0 || totalFailed > 0) {
+        logger.info('Completed quota panels update', {
+            totalGuilds,
+            totalPanels,
+            totalFailed
+        });
+    } else {
+        logger.debug('No quota panels to update');
+    }
+}
+
 // ============================================================================
 // Task Scheduler
 // ============================================================================
@@ -520,6 +594,11 @@ export function startScheduledTasks(client: Client): () => void {
             name: 'Orphaned Run Roles',
             intervalMinutes: 15,
             handler: cleanupOrphanedRunRoles
+        },
+        {
+            name: 'Quota Panel Updates',
+            intervalMinutes: 10,
+            handler: updateQuotaPanels
         }
     ];
 

@@ -8,12 +8,14 @@ import {
 import type { SlashCommand } from '../../_types.js';
 import {
     createStaffReplyEmbed,
-} from '../../lib/modmail/modmail.js';
+} from '../../../lib/modmail/modmail.js';
 import {
     addModmailMessage,
     getModmailTicket,
-} from '../../lib/utilities/http.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+    awardModerationPointsWithUpdate,
+} from '../../../lib/utilities/http.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
+import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
 
 export const modmailreply: SlashCommand = {
     requiredRole: 'security',
@@ -167,6 +169,28 @@ export const modmailreply: SlashCommand = {
             }
 
             await logCommandExecution(interaction.client, interaction, { success: true });
+
+            // Award moderation points if configured
+            try {
+                const invokerMember = await interaction.guild.members.fetch(interaction.user.id);
+                const moderationPointsResult = await awardModerationPointsWithUpdate(
+                    interaction.client,
+                    interaction.guildId,
+                    interaction.user.id,
+                    {
+                        actor_user_id: interaction.user.id,
+                        actor_roles: getMemberRoleIds(invokerMember),
+                        command_type: 'modmail_reply',
+                    }
+                );
+                
+                if (moderationPointsResult.points_awarded > 0) {
+                    console.log(`[ModmailReply] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                }
+            } catch (pointsErr) {
+                // Non-critical, don't block the command
+                console.warn('[ModmailReply] Failed to award moderation points:', pointsErr);
+            }
 
         } catch (error) {
             console.error('[ModmailReply] Error:', error);

@@ -9,8 +9,8 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
-import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../lib/utilities/http.js';
+import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
+import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles, awardModerationPointsWithUpdate } from '../../../lib/utilities/http.js';
 
 /**
  * /suspend - Temporarily suspend a member from raid participation
@@ -364,6 +364,27 @@ export const suspend: SlashCommand = {
                 }
 
                 await interaction.editReply({ embeds: [responseEmbed] });
+
+                // Award moderation points if configured
+                try {
+                    const moderationPointsResult = await awardModerationPointsWithUpdate(
+                        interaction.client,
+                        interaction.guildId,
+                        interaction.user.id,
+                        {
+                            actor_user_id: interaction.user.id,
+                            actor_roles: getMemberRoleIds(invokerMember),
+                            command_type: 'suspend',
+                        }
+                    );
+                    
+                    if (moderationPointsResult.points_awarded > 0) {
+                        console.log(`[Suspend] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                    }
+                } catch (pointsErr) {
+                    // Non-critical, don't block the command
+                    console.warn('[Suspend] Failed to award moderation points:', pointsErr);
+                }
 
                 // Log to punishment_log channel if configured
                 try {

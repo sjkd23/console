@@ -9,8 +9,8 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { canActorTargetMember, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { createPunishment, BackendError, getGuildChannels } from '../../lib/utilities/http.js';
+import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { createPunishment, BackendError, getGuildChannels, awardModerationPointsWithUpdate } from '../../../lib/utilities/http.js';
 
 /**
  * /warn - Issue a warning to a member
@@ -131,6 +131,27 @@ export const warn: SlashCommand = {
                 )
                 .setFooter({ text: dmSent ? 'User notified via DM' : 'Could not DM user' })
                 .setTimestamp();                await interaction.editReply({ embeds: [responseEmbed] });
+
+                // Award moderation points if configured
+                try {
+                    const moderationPointsResult = await awardModerationPointsWithUpdate(
+                        interaction.client,
+                        interaction.guildId,
+                        interaction.user.id,
+                        {
+                            actor_user_id: interaction.user.id,
+                            actor_roles: getMemberRoleIds(invokerMember),
+                            command_type: 'warn',
+                        }
+                    );
+                    
+                    if (moderationPointsResult.points_awarded > 0) {
+                        console.log(`[Warn] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                    }
+                } catch (pointsErr) {
+                    // Non-critical, don't block the command
+                    console.warn('[Warn] Failed to award moderation points:', pointsErr);
+                }
 
                 // Log to punishment_log channel if configured
                 try {

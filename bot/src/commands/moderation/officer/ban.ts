@@ -9,8 +9,8 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { canActorTargetMember, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { getGuildChannels } from '../../lib/utilities/http.js';
+import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { getGuildChannels } from '../../../lib/utilities/http.js';
 
 /**
  * /ban - Permanently ban a member from the server

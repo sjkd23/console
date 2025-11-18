@@ -11,7 +11,7 @@ import {
     ComponentType,
     Guild,
 } from 'discord.js';
-import type { SlashCommand } from '../../_types.js';
+import type { SlashCommand } from '../_types.js';
 import {
     generateModmailTicketId,
     createModmailMessageEmbed,
@@ -156,7 +156,7 @@ export const modmail: SlashCommand = {
                 // Check if user already has an open ticket in this guild
                 try {
                     const existingTickets = await getGuildModmailTickets(selectedGuildId, 'open');
-                    const userHasOpenTicket = existingTickets.tickets.some(t => t.user_id === interaction.user.id);
+                    const userHasOpenTicket = existingTickets.tickets.some((t: any) => t.user_id === interaction.user.id);
                     
                     if (userHasOpenTicket) {
                         await selectInteraction.editReply({
@@ -376,7 +376,7 @@ export async function handleModmailConfirm(interaction: any): Promise<void> {
                 thread_id: thread.id,
                 message_id: modmailMessage.id,
             });
-        } catch (err) {
+        } catch (err: unknown) {
             // Handle existing ticket error
             if (err instanceof BackendError && err.code === 'EXISTING_TICKET') {
                 await interaction.followUp({

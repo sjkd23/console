@@ -9,9 +9,9 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { hasInternalRole, getMemberRoleIds, canActorTargetMember } from '../../lib/permissions/permissions.js';
-import { updateRaiderIGN, BackendError, getGuildChannels } from '../../lib/utilities/http.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+import { hasInternalRole, getMemberRoleIds, canActorTargetMember } from '../../../lib/permissions/permissions.js';
+import { updateRaiderIGN, BackendError, getGuildChannels, awardModerationPointsWithUpdate } from '../../../lib/utilities/http.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /editname - Update a verified raider's IGN and nickname.
@@ -173,6 +173,27 @@ export const editname: SlashCommand = {
             await interaction.editReply({
                 embeds: [embed],
             });
+
+            // Award moderation points if configured
+            try {
+                const moderationPointsResult = await awardModerationPointsWithUpdate(
+                    interaction.client,
+                    interaction.guildId,
+                    interaction.user.id,
+                    {
+                        actor_user_id: interaction.user.id,
+                        actor_roles: getMemberRoleIds(invokerMember),
+                        command_type: 'editname',
+                    }
+                );
+                
+                if (moderationPointsResult.points_awarded > 0) {
+                    console.log(`[Editname] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                }
+            } catch (pointsErr) {
+                // Non-critical, don't block the command
+                console.warn('[Editname] Failed to award moderation points:', pointsErr);
+            }
 
             // Log to bot-log (brief since detailed log goes to veri_log)
             await logCommandExecution(interaction.client, interaction, {

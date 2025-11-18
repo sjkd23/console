@@ -9,7 +9,7 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
+import { getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
 import { 
     removePunishment, 
     getPunishment, 
@@ -18,7 +18,7 @@ import {
     getGuildRoles,
     getNote,
     removeNote
-} from '../../lib/utilities/http.js';
+} from '../../../lib/utilities/http.js';
 
 /**
  * /removepunishment - Permanently remove a punishment or note from records

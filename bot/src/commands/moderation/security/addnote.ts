@@ -8,9 +8,9 @@ import {
     TimestampStyles,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { canActorTargetMember, getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { createNote, BackendError } from '../../lib/utilities/http.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+import { canActorTargetMember, getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { createNote, BackendError, awardModerationPointsWithUpdate } from '../../../lib/utilities/http.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /addnote - Add a silent staff note to a member
@@ -112,6 +112,27 @@ export const addnote: SlashCommand = {
                     .setTimestamp();
 
                 await interaction.editReply({ embeds: [responseEmbed] });
+
+                // Award moderation points if configured
+                try {
+                    const moderationPointsResult = await awardModerationPointsWithUpdate(
+                        interaction.client,
+                        interaction.guildId,
+                        interaction.user.id,
+                        {
+                            actor_user_id: interaction.user.id,
+                            actor_roles: getMemberRoleIds(invokerMember),
+                            command_type: 'addnote',
+                        }
+                    );
+                    
+                    if (moderationPointsResult.points_awarded > 0) {
+                        console.log(`[Addnote] Awarded ${moderationPointsResult.points_awarded} moderation points to ${interaction.user.id}`);
+                    }
+                } catch (pointsErr) {
+                    // Non-critical, don't block the command
+                    console.warn('[Addnote] Failed to award moderation points:', pointsErr);
+                }
 
                 // Log to bot-log
                 await logCommandExecution(interaction.client, interaction, {

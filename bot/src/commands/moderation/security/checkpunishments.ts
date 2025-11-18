@@ -12,7 +12,7 @@ import {
     ButtonInteraction,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getUserPunishments, getUserNotes, BackendError } from '../../lib/utilities/http.js';
+import { getUserPunishments, getUserNotes, BackendError } from '../../../lib/utilities/http.js';
 
 /**
  * Create pagination buttons with mode toggle for checkpunishments

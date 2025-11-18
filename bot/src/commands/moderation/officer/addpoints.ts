@@ -7,12 +7,12 @@ import {
     PermissionFlagsBits,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { adjustPoints } from '../../lib/utilities/http.js';
-import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../lib/utilities/interaction-helpers.js';
-import { formatErrorMessage } from '../../lib/errors/error-handler.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
-import { validateAndCapAmount, CAPS } from '../../lib/validation/amount-validation.js';
+import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { adjustPoints } from '../../../lib/utilities/http.js';
+import { ensureGuildContext, validateGuildMember, fetchGuildMember } from '../../../lib/utilities/interaction-helpers.js';
+import { formatErrorMessage } from '../../../lib/errors/error-handler.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
+import { validateAndCapAmount, CAPS } from '../../../lib/validation/amount-validation.js';
 
 /**
  * /addpoints - Manually adjust regular (raider) points for a member.

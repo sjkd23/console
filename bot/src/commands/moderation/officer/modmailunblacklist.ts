@@ -9,9 +9,9 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { unblacklistModmail, BackendError, getGuildChannels } from '../../lib/utilities/http.js';
-import { getMemberRoleIds } from '../../lib/permissions/permissions.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+import { unblacklistModmail, BackendError, getGuildChannels } from '../../../lib/utilities/http.js';
+import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 export const modmailunblacklist: SlashCommand = {
     requiredRole: 'officer',

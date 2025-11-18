@@ -6,8 +6,8 @@ import {
     PermissionFlagsBits,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { syncTeamRoleForGuild } from '../../lib/team/team-role-manager.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+import { syncTeamRoleForGuild } from '../../../lib/team/team-role-manager.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /syncteam - Manually sync Team role for all members in the guild

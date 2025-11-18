@@ -305,16 +305,53 @@ export async function handleQuotaConfigModeration(interaction: ButtonInteraction
         .setCustomId(`quota_moderation_modal:${roleId}:${interaction.message.id}`)
         .setTitle('Configure Moderation Points');
 
-    const moderationPointsInput = new TextInputBuilder()
-        .setCustomId('moderation_points')
-        .setLabel('Points Per Verification')
+    // Create individual inputs for each command
+    const verifyPointsInput = new TextInputBuilder()
+        .setCustomId('verify_points')
+        .setLabel('Points Per Verification (/verify)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 1 or 0.5')
+        .setPlaceholder('e.g., 2 or 0.5')
         .setRequired(true)
-        .setValue(config?.moderation_points?.toFixed(2) || '0.00');
+        .setValue(config?.verify_points?.toFixed(2) || '0.00');
+
+    const warnPointsInput = new TextInputBuilder()
+        .setCustomId('warn_points')
+        .setLabel('Points Per Warning (/warn)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 1 or 0')
+        .setRequired(true)
+        .setValue(config?.warn_points?.toFixed(2) || '0.00');
+
+    const suspendPointsInput = new TextInputBuilder()
+        .setCustomId('suspend_points')
+        .setLabel('Points Per Suspension (/suspend)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 1 or 0')
+        .setRequired(true)
+        .setValue(config?.suspend_points?.toFixed(2) || '0.00');
+
+    const modmailReplyPointsInput = new TextInputBuilder()
+        .setCustomId('modmail_reply_points')
+        .setLabel('Points Per Modmail Reply')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 0.5 or 0')
+        .setRequired(true)
+        .setValue(config?.modmail_reply_points?.toFixed(2) || '0.00');
+
+    const editnamePointsInput = new TextInputBuilder()
+        .setCustomId('editname_points')
+        .setLabel('Points Per Name Edit (/editname)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 0.25 or 0')
+        .setRequired(true)
+        .setValue(config?.editname_points?.toFixed(2) || '0.00');
 
     modal.addComponents(
-        new ActionRowBuilder<TextInputBuilder>().addComponents(moderationPointsInput)
+        new ActionRowBuilder<TextInputBuilder>().addComponents(verifyPointsInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(warnPointsInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(suspendPointsInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(modmailReplyPointsInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(editnamePointsInput)
     );
 
     await interaction.showModal(modal);
@@ -335,19 +372,35 @@ export async function handleQuotaModerationModal(interaction: ModalSubmitInterac
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    // Parse input
-    const moderationPoints = parseFloat(interaction.fields.getTextInputValue('moderation_points'));
+    // Parse all command-specific point inputs
+    const verifyPoints = parseFloat(interaction.fields.getTextInputValue('verify_points'));
+    const warnPoints = parseFloat(interaction.fields.getTextInputValue('warn_points'));
+    const suspendPoints = parseFloat(interaction.fields.getTextInputValue('suspend_points'));
+    const modmailReplyPoints = parseFloat(interaction.fields.getTextInputValue('modmail_reply_points'));
+    const editnamePoints = parseFloat(interaction.fields.getTextInputValue('editname_points'));
 
-    // Validate moderation points (allow decimals up to 2 decimal places)
-    if (isNaN(moderationPoints) || moderationPoints < 0) {
-        await interaction.editReply('❌ Moderation points must be a non-negative number.');
-        return;
-    }
+    // Note: addnote_points is not in the modal due to 5 component limit, 
+    // will need to be configured separately or we need a different approach
+    // For now, we'll set it to 0 or preserve existing value
 
-    // Check decimal places (max 2)
-    if (Math.round(moderationPoints * 100) !== moderationPoints * 100) {
-        await interaction.editReply('❌ Moderation points can have at most 2 decimal places (e.g., 1.25).');
-        return;
+    // Validate all points (allow decimals up to 2 decimal places)
+    const pointsToValidate = [
+        { name: 'Verify', value: verifyPoints },
+        { name: 'Warn', value: warnPoints },
+        { name: 'Suspend', value: suspendPoints },
+        { name: 'Modmail Reply', value: modmailReplyPoints },
+        { name: 'Editname', value: editnamePoints },
+    ];
+
+    for (const { name, value } of pointsToValidate) {
+        if (isNaN(value) || value < 0) {
+            await interaction.editReply(`❌ ${name} points must be a non-negative number.`);
+            return;
+        }
+        if (Math.round(value * 100) !== value * 100) {
+            await interaction.editReply(`❌ ${name} points can have at most 2 decimal places (e.g., 1.25).`);
+            return;
+        }
     }
 
     // Check permissions
@@ -358,16 +411,38 @@ export async function handleQuotaModerationModal(interaction: ModalSubmitInterac
         await updateQuotaRoleConfig(interaction.guildId!, roleId, {
             actor_user_id: interaction.user.id,
             actor_has_admin_permission: hasAdminPerm,
-            moderation_points: moderationPoints,
+            verify_points: verifyPoints,
+            warn_points: warnPoints,
+            suspend_points: suspendPoints,
+            modmail_reply_points: modmailReplyPoints,
+            editname_points: editnamePoints,
         });
 
-        await interaction.editReply(
-            `✅ **Moderation points updated!**\n\n` +
-            `Staff members will now earn **${formatPoints(moderationPoints)} point${moderationPoints === 1 ? '' : 's'}** for each verification.\n\n` +
-            `This applies to:\n` +
-            `• Running \`/verify\` command\n` +
-            `• Approving manual verification tickets`
-        );
+        // Build success message
+        const commandPoints = [
+            { name: 'Verification', points: verifyPoints, commands: '`/verify`, manual approvals' },
+            { name: 'Warning', points: warnPoints, commands: '`/warn`' },
+            { name: 'Suspension', points: suspendPoints, commands: '`/suspend`' },
+            { name: 'Modmail Reply', points: modmailReplyPoints, commands: 'Replying to modmail' },
+            { name: 'Name Edit', points: editnamePoints, commands: '`/editname`' },
+        ];
+
+        const enabledCommands = commandPoints.filter(c => c.points > 0);
+        
+        let message = `✅ **Moderation points updated!**\n\n`;
+        
+        if (enabledCommands.length > 0) {
+            message += `**Enabled Commands:**\n`;
+            enabledCommands.forEach(c => {
+                message += `• ${c.name}: **${formatPoints(c.points)} point${c.points === 1 ? '' : 's'}** (${c.commands})\n`;
+            });
+        } else {
+            message += `⚠️ All moderation commands are set to 0 points. Staff will not earn quota points for moderation actions.\n`;
+        }
+
+        message += `\n💡 **Note:** Use \`/addnote\` points must be configured separately (modal limit).`;
+
+        await interaction.editReply(message);
 
         // Refresh the original /configquota panel using webhook
         if (mainPanelMessageId) {

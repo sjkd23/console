@@ -25,7 +25,7 @@ import {
     logVerificationEvent,
 } from '../../../lib/verification/verification.js';
 import { hasInternalRole } from '../../../lib/permissions/permissions.js';
-import { awardModerationPoints } from '../../../lib/utilities/http.js';
+import { awardModerationPointsWithUpdate } from '../../../lib/utilities/http.js';
 import { getMemberRoleIds } from '../../../lib/permissions/permissions.js';
 import { withButtonLock, getVerificationLockKey } from '../../../lib/utilities/button-mutex.js';
 
@@ -254,12 +254,14 @@ export async function handleVerificationApproveModal(interaction: ModalSubmitInt
         // Award moderation points if configured
         try {
             const actorRoles = getMemberRoleIds(actorMember);
-            const moderationPointsResult = await awardModerationPoints(
+            const moderationPointsResult = await awardModerationPointsWithUpdate(
+                interaction.client,
                 guildId,
                 interaction.user.id,
                 {
                     actor_user_id: interaction.user.id,
                     actor_roles: actorRoles,
+                    command_type: 'verify',
                 }
             );
             

@@ -6,13 +6,13 @@ import {
     GuildMember,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getJSON } from '../../lib/utilities/http.js';
+import { getJSON } from '../../../lib/utilities/http.js';
 import {
     canActorAddRole,
     canBotManageRole,
     type RoleKey,
-} from '../../lib/permissions/permissions.js';
-import { logCommandExecution } from '../../lib/logging/bot-logger.js';
+} from '../../../lib/permissions/permissions.js';
+import { logCommandExecution } from '../../../lib/logging/bot-logger.js';
 
 /**
  * /addrole - Add a role to a member (Officer+)

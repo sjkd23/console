@@ -30,8 +30,8 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../lib/permissions/permissions.js';
-import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../lib/utilities/http.js';
+import { canActorTargetMember, getMemberRoleIds, canBotManageRole } from '../../../lib/permissions/permissions.js';
+import { createPunishment, getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/utilities/http.js';
 
 /**
  * /mute - Temporarily mute a member from sending messages

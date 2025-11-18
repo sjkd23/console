@@ -35,9 +35,16 @@ export interface QuotaRoleConfig {
     reset_at: string; // ISO timestamp
     panel_message_id: string | null;
     created_at: string; // ISO timestamp - when this config was created
-    moderation_points: number; // Points awarded for verification activities
+    moderation_points: number; // DEPRECATED: Use individual command points instead
     base_exalt_points: number; // Base points for exaltation dungeons (default: 1.0)
     base_non_exalt_points: number; // Base points for non-exaltation dungeons (default: 1.0)
+    // Individual moderation command points
+    verify_points: number; // Points awarded for /verify command
+    warn_points: number; // Points awarded for /warn command
+    suspend_points: number; // Points awarded for /suspend command
+    modmail_reply_points: number; // Points awarded for replying to modmail
+    editname_points: number; // Points awarded for /editname command
+    addnote_points: number; // Points awarded for /addnote command
 }
 
 /**
@@ -65,8 +72,16 @@ export async function getQuotaRoleConfig(
         moderation_points: string; // DECIMAL comes as string from pg
         base_exalt_points: string; // DECIMAL comes as string from pg
         base_non_exalt_points: string; // DECIMAL comes as string from pg
+        verify_points: string; // DECIMAL comes as string from pg
+        warn_points: string; // DECIMAL comes as string from pg
+        suspend_points: string; // DECIMAL comes as string from pg
+        modmail_reply_points: string; // DECIMAL comes as string from pg
+        editname_points: string; // DECIMAL comes as string from pg
+        addnote_points: string; // DECIMAL comes as string from pg
     }>(
-        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points
+        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, 
+                moderation_points, base_exalt_points, base_non_exalt_points,
+                verify_points, warn_points, suspend_points, modmail_reply_points, editname_points, addnote_points
          FROM quota_role_config
          WHERE guild_id = $1::bigint AND discord_role_id = $2::bigint`,
         [guildId, discordRoleId]
@@ -85,6 +100,12 @@ export async function getQuotaRoleConfig(
         moderation_points: Number(row.moderation_points),
         base_exalt_points: Number(row.base_exalt_points),
         base_non_exalt_points: Number(row.base_non_exalt_points),
+        verify_points: Number(row.verify_points),
+        warn_points: Number(row.warn_points),
+        suspend_points: Number(row.suspend_points),
+        modmail_reply_points: Number(row.modmail_reply_points),
+        editname_points: Number(row.editname_points),
+        addnote_points: Number(row.addnote_points),
     };
 }
 
@@ -104,8 +125,16 @@ export async function getAllQuotaRoleConfigs(
         moderation_points: string; // DECIMAL comes as string from pg
         base_exalt_points: string; // DECIMAL comes as string from pg
         base_non_exalt_points: string; // DECIMAL comes as string from pg
+        verify_points: string; // DECIMAL comes as string from pg
+        warn_points: string; // DECIMAL comes as string from pg
+        suspend_points: string; // DECIMAL comes as string from pg
+        modmail_reply_points: string; // DECIMAL comes as string from pg
+        editname_points: string; // DECIMAL comes as string from pg
+        addnote_points: string; // DECIMAL comes as string from pg
     }>(
-        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points
+        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, 
+                moderation_points, base_exalt_points, base_non_exalt_points,
+                verify_points, warn_points, suspend_points, modmail_reply_points, editname_points, addnote_points
          FROM quota_role_config
          WHERE guild_id = $1::bigint
          ORDER BY discord_role_id`,
@@ -122,6 +151,12 @@ export async function getAllQuotaRoleConfigs(
         moderation_points: Number(row.moderation_points),
         base_exalt_points: Number(row.base_exalt_points),
         base_non_exalt_points: Number(row.base_non_exalt_points),
+        verify_points: Number(row.verify_points),
+        warn_points: Number(row.warn_points),
+        suspend_points: Number(row.suspend_points),
+        modmail_reply_points: Number(row.modmail_reply_points),
+        editname_points: Number(row.editname_points),
+        addnote_points: Number(row.addnote_points),
     }));
 }
 
@@ -136,9 +171,15 @@ export async function upsertQuotaRoleConfig(
         reset_at?: string; // ISO timestamp
         panel_message_id?: string | null;
         created_at?: string; // ISO timestamp - for resetting quota periods
-        moderation_points?: number; // Points awarded for verification activities
+        moderation_points?: number; // DEPRECATED: Use individual command points
         base_exalt_points?: number; // Base points for exaltation dungeons
         base_non_exalt_points?: number; // Base points for non-exaltation dungeons
+        verify_points?: number; // Points for /verify command
+        warn_points?: number; // Points for /warn command
+        suspend_points?: number; // Points for /suspend command
+        modmail_reply_points?: number; // Points for replying to modmail
+        editname_points?: number; // Points for /editname command
+        addnote_points?: number; // Points for /addnote command
     }
 ): Promise<QuotaRoleConfig> {
     const fields: string[] = [];
@@ -152,6 +193,12 @@ export async function upsertQuotaRoleConfig(
     const moderationPoints = config.moderation_points ?? 0;
     const baseExaltPoints = config.base_exalt_points ?? 1.0;
     const baseNonExaltPoints = config.base_non_exalt_points ?? 1.0;
+    const verifyPoints = config.verify_points ?? 0;
+    const warnPoints = config.warn_points ?? 0;
+    const suspendPoints = config.suspend_points ?? 0;
+    const modmailReplyPoints = config.modmail_reply_points ?? 0;
+    const editnamePoints = config.editname_points ?? 0;
+    const addnotePoints = config.addnote_points ?? 0;
 
     values.push(requiredPoints); // $3
     values.push(resetAt); // $4
@@ -159,6 +206,12 @@ export async function upsertQuotaRoleConfig(
     values.push(moderationPoints); // $6
     values.push(baseExaltPoints); // $7
     values.push(baseNonExaltPoints); // $8
+    values.push(verifyPoints); // $9
+    values.push(warnPoints); // $10
+    values.push(suspendPoints); // $11
+    values.push(modmailReplyPoints); // $12
+    values.push(editnamePoints); // $13
+    values.push(addnotePoints); // $14
 
     // Build UPDATE fields
     if (config.required_points !== undefined) {
@@ -191,6 +244,36 @@ export async function upsertQuotaRoleConfig(
     }
     idx++; // Move past $8
 
+    if (config.verify_points !== undefined) {
+        fields.push(`verify_points = $${idx}`);
+    }
+    idx++; // Move past $9
+
+    if (config.warn_points !== undefined) {
+        fields.push(`warn_points = $${idx}`);
+    }
+    idx++; // Move past $10
+
+    if (config.suspend_points !== undefined) {
+        fields.push(`suspend_points = $${idx}`);
+    }
+    idx++; // Move past $11
+
+    if (config.modmail_reply_points !== undefined) {
+        fields.push(`modmail_reply_points = $${idx}`);
+    }
+    idx++; // Move past $12
+
+    if (config.editname_points !== undefined) {
+        fields.push(`editname_points = $${idx}`);
+    }
+    idx++; // Move past $13
+
+    if (config.addnote_points !== undefined) {
+        fields.push(`addnote_points = $${idx}`);
+    }
+    idx++; // Move past $14
+
     if (config.panel_message_id !== undefined) {
         fields.push(`panel_message_id = $${idx++}::bigint`);
         values.push(config.panel_message_id);
@@ -218,19 +301,28 @@ export async function upsertQuotaRoleConfig(
         moderation_points: string; // DECIMAL comes as string from pg
         base_exalt_points: string; // DECIMAL comes as string from pg
         base_non_exalt_points: string; // DECIMAL comes as string from pg
+        verify_points: string; // DECIMAL comes as string from pg
+        warn_points: string; // DECIMAL comes as string from pg
+        suspend_points: string; // DECIMAL comes as string from pg
+        modmail_reply_points: string; // DECIMAL comes as string from pg
+        editname_points: string; // DECIMAL comes as string from pg
+        addnote_points: string; // DECIMAL comes as string from pg
     }>(
-        `INSERT INTO quota_role_config (guild_id, discord_role_id, required_points, reset_at, created_at, moderation_points, base_exalt_points, base_non_exalt_points, updated_at)
+        `INSERT INTO quota_role_config (guild_id, discord_role_id, required_points, reset_at, created_at, 
+                moderation_points, base_exalt_points, base_non_exalt_points,
+                verify_points, warn_points, suspend_points, modmail_reply_points, editname_points, addnote_points,
+                updated_at)
          VALUES ($1::bigint, $2::bigint, 
                  $3, 
                  COALESCE($4::timestamptz, NOW() + INTERVAL '7 days'),
                  COALESCE($5::timestamptz, NOW()),
-                 $6,
-                 $7,
-                 $8,
+                 $6, $7, $8, $9, $10, $11, $12, $13, $14,
                  NOW())
          ON CONFLICT (guild_id, discord_role_id)
          DO UPDATE SET updated_at = NOW() ${updateClause}
-         RETURNING guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points`,
+         RETURNING guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, 
+                   moderation_points, base_exalt_points, base_non_exalt_points,
+                   verify_points, warn_points, suspend_points, modmail_reply_points, editname_points, addnote_points`,
         values
     );
 
@@ -245,6 +337,12 @@ export async function upsertQuotaRoleConfig(
         moderation_points: Number(row.moderation_points),
         base_exalt_points: Number(row.base_exalt_points),
         base_non_exalt_points: Number(row.base_non_exalt_points),
+        verify_points: Number(row.verify_points),
+        warn_points: Number(row.warn_points),
+        suspend_points: Number(row.suspend_points),
+        modmail_reply_points: Number(row.modmail_reply_points),
+        editname_points: Number(row.editname_points),
+        addnote_points: Number(row.addnote_points),
     };
 }
 

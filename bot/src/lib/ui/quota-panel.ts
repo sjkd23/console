@@ -87,7 +87,13 @@ export async function updateQuotaPanel(
         const quotaConfig = configResult.config || {
             base_exalt_points: 1,
             base_non_exalt_points: 1,
-            moderation_points: 0
+            moderation_points: 0,
+            verify_points: 0,
+            warn_points: 0,
+            suspend_points: 0,
+            modmail_reply_points: 0,
+            editname_points: 0,
+            addnote_points: 0,
         };
         
         // Build embed with config data
@@ -160,6 +166,12 @@ function buildLeaderboardEmbed(
         base_exalt_points: number;
         base_non_exalt_points: number;
         moderation_points: number;
+        verify_points?: number;
+        warn_points?: number;
+        suspend_points?: number;
+        modmail_reply_points?: number;
+        editname_points?: number;
+        addnote_points?: number;
     },
     dungeonOverrides: Record<string, number>
 ): EmbedBuilder {
@@ -179,8 +191,28 @@ function buildLeaderboardEmbed(
         pointSources.push(`**Non-Exalt Dungeons:** ${formatPoints(config.base_non_exalt_points)} pts/run`);
     }
     
-    // Add moderation points if not 0
-    if (config.moderation_points > 0) {
+    // Add moderation command points (individual commands)
+    if (config.verify_points && config.verify_points > 0) {
+        pointSources.push(`**Verifications:** ${formatPoints(config.verify_points)} pts each`);
+    }
+    if (config.warn_points && config.warn_points > 0) {
+        pointSources.push(`**Warnings:** ${formatPoints(config.warn_points)} pts each`);
+    }
+    if (config.suspend_points && config.suspend_points > 0) {
+        pointSources.push(`**Suspensions:** ${formatPoints(config.suspend_points)} pts each`);
+    }
+    if (config.modmail_reply_points && config.modmail_reply_points > 0) {
+        pointSources.push(`**Modmail Replies:** ${formatPoints(config.modmail_reply_points)} pts each`);
+    }
+    if (config.editname_points && config.editname_points > 0) {
+        pointSources.push(`**Name Edits:** ${formatPoints(config.editname_points)} pts each`);
+    }
+    if (config.addnote_points && config.addnote_points > 0) {
+        pointSources.push(`**Notes Added:** ${formatPoints(config.addnote_points)} pts each`);
+    }
+    
+    // Fallback: show old moderation_points if new fields aren't set (backward compatibility)
+    if (config.moderation_points > 0 && (!config.verify_points || config.verify_points === 0)) {
         pointSources.push(`**Verifications:** ${formatPoints(config.moderation_points)} pts each`);
     }
     
@@ -223,7 +255,7 @@ function buildLeaderboardEmbed(
                 const position = index + 1;
                 const emoji = position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `${position}.`;
                 const metQuota = entry.points >= requiredPoints ? '✅' : '';
-                return `${emoji} <@${entry.user_id}> - **${formatPoints(entry.points)}** pts (${entry.runs} runs) ${metQuota}`;
+                return `${emoji} <@${entry.user_id}> - **${formatPoints(entry.points)}** pts ${metQuota}`;
             })
             .join('\n');
 

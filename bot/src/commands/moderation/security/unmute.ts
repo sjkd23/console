@@ -1,4 +1,4 @@
-// bot/src/commands/unsuspend.ts
+// bot/src/commands/moderation/security/unmute.ts
 import {
     SlashCommandBuilder,
     ChatInputCommandInteraction,
@@ -9,30 +9,30 @@ import {
     TextChannel,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getMemberRoleIds, canBotManageRole, canActorTargetMember } from '../../lib/permissions/permissions.js';
-import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../lib/utilities/http.js';
+import { getMemberRoleIds, canBotManageRole, canActorTargetMember } from '../../../lib/permissions/permissions.js';
+import { getUserPunishments, removePunishment, BackendError, getGuildChannels, getGuildRoles } from '../../../lib/utilities/http.js';
 
 /**
- * /unsuspend - Remove an active suspension from a member
+ * /unmute - Remove an active mute from a member
  * Security+ command
- * Deactivates the suspension and removes the suspended role
+ * Deactivates the mute and removes the muted role
  */
-export const unsuspend: SlashCommand = {
+export const unmute: SlashCommand = {
     requiredRole: 'security',
     mutatesRoles: true,
     data: new SlashCommandBuilder()
-        .setName('unsuspend')
-        .setDescription('Remove an active suspension from a member (Security+)')
+        .setName('unmute')
+        .setDescription('Remove an active mute from a member (Security+)')
         .addUserOption(option =>
             option
                 .setName('member')
-                .setDescription('The member to unsuspend')
+                .setDescription('The member to unmute')
                 .setRequired(true)
         )
         .addStringOption(option =>
             option
                 .setName('reason')
-                .setDescription('Reason for removing the suspension')
+                .setDescription('Reason for removing the mute')
                 .setRequired(true)
                 .setMaxLength(500)
         )
@@ -59,9 +59,9 @@ export const unsuspend: SlashCommand = {
             const targetUser = interaction.options.getUser('member', true);
             const reason = interaction.options.getString('reason', true).trim();
 
-            // Can't unsuspend yourself (shouldn't happen but check anyway)
+            // Can't unmute yourself (shouldn't happen but check anyway)
             if (targetUser.id === interaction.user.id) {
-                await interaction.editReply('❌ You cannot unsuspend yourself.');
+                await interaction.editReply('❌ You cannot unmute yourself.');
                 return;
             }
 
@@ -85,127 +85,135 @@ export const unsuspend: SlashCommand = {
             }
 
             try {
-                // Get active suspensions for this user
+                // Get active mutes for this user
                 const { punishments } = await getUserPunishments(
                     interaction.guildId,
                     targetUser.id,
                     true // active only
                 );
 
-                // Filter to only active suspensions
-                const activeSuspensions = punishments.filter(
-                    p => p.type === 'suspend' && p.active
+                // Filter to only active mutes
+                const activeMutes = punishments.filter(
+                    p => p.type === 'mute' && p.active
                 );
 
-                if (activeSuspensions.length === 0) {
-                    await interaction.editReply(`❌ **No Active Suspension**\n\n<@${targetUser.id}> does not have any active suspensions.\n\nUse \`/checkpunishments\` to view their punishment history.`);
+                if (activeMutes.length === 0) {
+                    await interaction.editReply(`❌ **No Active Mute**\n\n<@${targetUser.id}> does not have any active mutes.\n\nUse \`/checkpunishments\` to view their punishment history.`);
                     return;
                 }
 
-                // If multiple active suspensions (shouldn't happen often), use the most recent
-                const suspension = activeSuspensions.sort(
-                    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                )[0];
+                // Use the most recent active mute
+                const muteToRemove = activeMutes[0];
+                const muteExpiry = muteToRemove.expires_at ? new Date(muteToRemove.expires_at) : null;
 
-                // Check if this is an old-format punishment ID (numeric instead of 24-char hex)
-                const isOldFormat = typeof suspension.id === 'string' && 
-                                   (suspension.id.length !== 24 || !/^[0-9a-f]{24}$/.test(suspension.id));
-
-                if (isOldFormat) {
-                    await interaction.editReply(
-                        `❌ **Cannot Process Old Suspension**\n\n` +
-                        `This suspension (ID: \`${suspension.id}\`) was created with an old system and cannot be removed using this command.\n\n` +
-                        `**What to do:**\n` +
-                        `• The suspension will automatically expire at ${suspension.expires_at ? time(new Date(suspension.expires_at), TimestampStyles.RelativeTime) : 'an unknown time'}\n` +
-                        `• Ask an administrator to run the database migration to update old punishment records\n` +
-                        `• Or manually remove the suspended role from the user`
-                    );
-                    return;
-                }
-
-                // Remove the suspension via backend
-                const result = await removePunishment(suspension.id, {
+                // Remove the mute in backend
+                await removePunishment(muteToRemove.id, {
                     actor_user_id: interaction.user.id,
                     removal_reason: reason,
                     actor_roles: getMemberRoleIds(invokerMember),
                 });
 
-                // Remove the suspended role
+                // Try to remove the muted role
                 let roleRemoved = false;
                 let roleError = '';
                 try {
                     const { roles } = await getGuildRoles(interaction.guildId);
-                    const suspendedRoleId = roles.suspended;
+                    const mutedRoleId = roles.muted;
 
-                    if (suspendedRoleId) {
-                        if (targetMember.roles.cache.has(suspendedRoleId)) {
-                            await targetMember.roles.remove(suspendedRoleId, `Unsuspended by ${interaction.user.tag}`);
+                    if (mutedRoleId) {
+                        // Check if bot can manage the role
+                        const botRoleCheck = await canBotManageRole(interaction.guild, mutedRoleId);
+                        if (!botRoleCheck.canManage) {
+                            roleError = 'Bot cannot manage muted role';
+                            console.warn(`[Unmute] ${botRoleCheck.reason}`);
+                        } else if (targetMember.roles.cache.has(mutedRoleId)) {
+                            await targetMember.roles.remove(mutedRoleId, `Unmuted by ${interaction.user.tag} - ${muteToRemove.id}`);
                             roleRemoved = true;
                         } else {
-                            roleError = 'User did not have suspended role';
+                            // User doesn't have the role anyway
+                            roleRemoved = true;
                         }
                     } else {
-                        roleError = 'Suspended role not configured';
+                        roleError = 'No muted role configured';
                     }
                 } catch (roleErr: any) {
-                    if (roleErr?.code === 50013) {
-                        roleError = 'Missing permissions to remove role';
-                        console.warn(`[Unsuspend] Cannot remove suspended role: Missing Permissions`);
-                    } else {
-                        roleError = 'Failed to remove role';
-                        console.warn(`[Unsuspend] Failed to remove suspended role:`, roleErr?.message || roleErr);
-                    }
+                    roleError = roleErr?.message || 'Unknown error';
+                    console.warn(`[Unmute] Failed to remove muted role:`, roleErr);
                 }
 
                 // Try to DM the user
                 let dmSent = false;
                 try {
                     const dmEmbed = new EmbedBuilder()
-                        .setTitle('✅ Suspension Removed')
-                        .setDescription(`Your suspension has been removed in **${interaction.guild.name}**.`)
+                        .setTitle('🔊 Mute Removed')
+                        .setDescription(`Your mute has been removed in **${interaction.guild.name}**.`)
                         .setColor(0x00ff00)
                         .addFields(
+                            { name: 'Reason for Removal', value: reason },
                             { name: 'Removed By', value: `<@${interaction.user.id}>`, inline: true },
-                            { name: 'Reason', value: reason },
-                            { name: 'Original Suspension Reason', value: result.reason }
-                        )
-                        .setFooter({ text: 'You can now participate in raids again.' })
-                        .setTimestamp();
+                            { name: 'Original Mute ID', value: `\`${muteToRemove.id}\``, inline: true }
+                        );
+
+                    if (muteExpiry) {
+                        const wasExpired = muteExpiry < new Date();
+                        dmEmbed.addFields({
+                            name: 'Original Expiry',
+                            value: wasExpired 
+                                ? `${time(muteExpiry, TimestampStyles.RelativeTime)} (was expired)`
+                                : time(muteExpiry, TimestampStyles.RelativeTime),
+                            inline: true
+                        });
+                    }
+
+                    dmEmbed.setFooter({ text: 'You can now send messages in this server.' });
+                    dmEmbed.setTimestamp();
 
                     await targetUser.send({ embeds: [dmEmbed] });
                     dmSent = true;
                 } catch (dmErr) {
-                    console.warn(`[Unsuspend] Failed to DM user ${targetUser.id}:`, dmErr);
+                    console.warn(`[Unmute] Failed to DM user ${targetUser.id}:`, dmErr);
                 }
 
                 // Build success response
                 const responseEmbed = new EmbedBuilder()
-                    .setTitle('✅ Member Unsuspended')
+                    .setTitle('🔊 Mute Removed')
                     .setColor(0x00ff00)
                     .addFields(
                         { name: 'Member', value: `<@${targetUser.id}>`, inline: true },
-                        { name: 'Suspension ID', value: `\`${suspension.id}\``, inline: true },
-                        { name: 'Moderator', value: `<@${interaction.user.id}>`, inline: true },
-                        { name: 'Reason', value: reason },
-                        { name: 'Original Suspension Reason', value: result.reason }
-                    )
-                    .setTimestamp();
+                        { name: 'Mute ID', value: `\`${muteToRemove.id}\``, inline: true },
+                        { name: 'Removed By', value: `<@${interaction.user.id}>`, inline: true }
+                    );
+
+                if (muteExpiry) {
+                    const wasExpired = muteExpiry < new Date();
+                    responseEmbed.addFields({
+                        name: 'Original Expiry',
+                        value: wasExpired 
+                            ? `${time(muteExpiry, TimestampStyles.RelativeTime)} (was expired)`
+                            : time(muteExpiry, TimestampStyles.RelativeTime),
+                        inline: true
+                    });
+                }
+
+                responseEmbed.addFields(
+                    { name: 'Reason', value: reason }
+                );
 
                 const warnings = [];
-                if (roleRemoved) {
-                    warnings.push('✓ Suspended role removed');
-                } else if (roleError) {
+                if (!roleRemoved) {
                     warnings.push(`⚠️ Role: ${roleError}`);
                 }
                 if (!dmSent) {
-                    warnings.push('⚠️ Could not DM user');
-                } else {
-                    warnings.push('✓ User notified via DM');
+                    warnings.push('⚠️ Could not DM user (DMs may be disabled)');
                 }
 
                 if (warnings.length > 0) {
                     responseEmbed.setFooter({ text: warnings.join(' | ') });
+                } else {
+                    responseEmbed.setFooter({ text: '✓ Muted role removed | ✓ User notified via DM' });
                 }
+
+                responseEmbed.setTimestamp();
 
                 await interaction.editReply({ embeds: [responseEmbed] });
 
@@ -219,28 +227,39 @@ export const unsuspend: SlashCommand = {
 
                         if (logChannel && logChannel.isTextBased()) {
                             const logEmbed = new EmbedBuilder()
-                                .setTitle('✅ Member Unsuspended')
+                                .setTitle('🔊 Mute Removed')
                                 .setColor(0x00ff00)
                                 .addFields(
                                     { name: 'Member', value: `<@${targetUser.id}> (${targetUser.tag})`, inline: true },
                                     { name: 'User ID', value: targetUser.id, inline: true },
-                                    { name: 'Suspension ID', value: `\`${suspension.id}\``, inline: true },
-                                    { name: 'Moderator', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
-                                    { name: 'Role Removed', value: roleRemoved ? '✅ Yes' : `❌ No${roleError ? ` (${roleError})` : ''}`, inline: true },
-                                    { name: 'DM Sent', value: dmSent ? '✅ Yes' : '❌ No', inline: true },
-                                    { name: 'Reason', value: reason },
-                                    { name: 'Original Suspension Reason', value: result.reason }
-                                )
-                                .setTimestamp();
+                                    { name: 'Mute ID', value: `\`${muteToRemove.id}\``, inline: true },
+                                    { name: 'Removed By', value: `<@${interaction.user.id}> (${interaction.user.tag})`, inline: true },
+                                    { name: 'Role Removed', value: roleRemoved ? '✅ Yes' : `❌ No (${roleError})`, inline: true },
+                                    { name: 'DM Sent', value: dmSent ? '✅ Yes' : '❌ No', inline: true }
+                                );
+
+                            if (muteExpiry) {
+                                const wasExpired = muteExpiry < new Date();
+                                logEmbed.addFields({
+                                    name: 'Original Expiry',
+                                    value: wasExpired 
+                                        ? `${time(muteExpiry, TimestampStyles.LongDateTime)} (was expired)`
+                                        : time(muteExpiry, TimestampStyles.LongDateTime),
+                                    inline: false
+                                });
+                            }
+
+                            logEmbed.addFields({ name: 'Reason', value: reason });
+                            logEmbed.setTimestamp();
 
                             await (logChannel as TextChannel).send({ embeds: [logEmbed] });
                         }
                     }
                 } catch (logErr) {
-                    console.warn(`[Unsuspend] Failed to log to punishment_log channel:`, logErr);
+                    console.warn(`[Unmute] Failed to log to punishment_log channel:`, logErr);
                 }
             } catch (err) {
-                let errorMessage = '❌ **Failed to unsuspend member**\n\n';
+                let errorMessage = '❌ **Failed to unmute member**\n\n';
 
                 if (err instanceof BackendError) {
                     switch (err.code) {
@@ -253,21 +272,18 @@ export const unsuspend: SlashCommand = {
                             errorMessage += '• This is likely a server configuration issue\n';
                             errorMessage += '• Contact a server administrator if this persists';
                             break;
-                        case 'PUNISHMENT_NOT_FOUND':
-                            errorMessage += '**Issue:** The suspension could not be found or has already been removed.\n\n';
-                            errorMessage += 'The user may not have an active suspension.';
+                        case 'NOT_FOUND':
+                            errorMessage += 'The mute record could not be found. It may have already been removed or expired.';
                             break;
                         case 'VALIDATION_ERROR':
-                            errorMessage += `**Issue:** ${err.message}\n\n`;
-                            errorMessage += '**Requirements:**\n';
-                            errorMessage += '• Reason must be 1-500 characters';
+                            errorMessage += `**Issue:** ${err.message}`;
                             break;
                         default:
                             errorMessage += `**Error:** ${err.message}\n\n`;
                             errorMessage += 'Please try again or contact an administrator if the problem persists.';
                     }
                 } else {
-                    console.error('[Unsuspend] Unexpected error:', err);
+                    console.error('[Unmute] Unexpected error:', err);
                     errorMessage += 'An unexpected error occurred. Please try again later.';
                 }
 
@@ -281,7 +297,7 @@ export const unsuspend: SlashCommand = {
                     await interaction.reply({ content: '❌ Something went wrong.', flags: MessageFlags.Ephemeral });
                 }
             } catch { }
-            console.error('[Unsuspend] Unhandled error:', unhandled);
+            console.error('[Unmute] Unhandled error:', unhandled);
         }
     },
 };

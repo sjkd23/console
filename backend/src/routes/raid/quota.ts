@@ -418,6 +418,31 @@ export default async function quotaRoutes(app: FastifyInstance) {
                 (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
                 { message: 'Base non-exalt points must have at most 2 decimal places' }
             ),
+            // Individual moderation command points
+            verify_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Verify points must have at most 2 decimal places' }
+            ),
+            warn_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Warn points must have at most 2 decimal places' }
+            ),
+            suspend_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Suspend points must have at most 2 decimal places' }
+            ),
+            modmail_reply_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Modmail reply points must have at most 2 decimal places' }
+            ),
+            editname_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Editname points must have at most 2 decimal places' }
+            ),
+            addnote_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Addnote points must have at most 2 decimal places' }
+            ),
         });
 
         const p = Params.safeParse(req.params);
@@ -1170,10 +1195,11 @@ export default async function quotaRoutes(app: FastifyInstance) {
 
     /**
      * POST /quota/award-moderation-points/:guild_id/:user_id
-     * Award moderation points to a user for verification activities
-     * This is called automatically when staff verify members
+     * Award moderation points to a user for moderation activities
+     * This is called automatically when staff perform moderation actions
      * 
-     * Body: { actor_user_id, actor_roles? }
+     * Body: { actor_user_id, actor_roles?, command_type? }
+     * command_type: 'verify' | 'warn' | 'suspend' | 'modmail_reply' | 'editname' | 'addnote'
      * Returns: { points_awarded: number }
      */
     app.post('/quota/award-moderation-points/:guild_id/:user_id', async (req, reply) => {
@@ -1185,6 +1211,7 @@ export default async function quotaRoutes(app: FastifyInstance) {
         const Body = z.object({
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
+            command_type: z.enum(['verify', 'warn', 'suspend', 'modmail_reply', 'editname', 'addnote']).optional(),
         });
 
         const p = Params.safeParse(req.params);
@@ -1195,7 +1222,10 @@ export default async function quotaRoutes(app: FastifyInstance) {
         }
 
         const { guild_id, user_id } = p.data;
-        const { actor_user_id, actor_roles } = b.data;
+        const { actor_user_id, actor_roles, command_type } = b.data;
+
+        // Default to 'verify' for backward compatibility
+        const cmdType = command_type || 'verify';
 
         // Authorization: actor must have security role or higher
         try {
@@ -1221,34 +1251,81 @@ export default async function quotaRoutes(app: FastifyInstance) {
         }
 
         try {
-            // Get all quota role configs for this guild to find moderation_points settings
+            // Get all quota role configs for this guild to find command-specific point settings
             const configs = await getAllQuotaRoleConfigs(guild_id);
             
-            // Filter to only configs where the user has the role AND moderation_points > 0
+            // Filter to only configs where the user has the role AND the specific command has points > 0
             const relevantConfigs = configs.filter(config => {
-                const hasModerationPoints = config.moderation_points > 0;
                 const hasRole = actor_roles?.includes(config.discord_role_id);
-                return hasModerationPoints && hasRole;
+                if (!hasRole) return false;
+
+                // Check the appropriate point field based on command_type
+                let hasPoints = false;
+                switch (cmdType) {
+                    case 'verify':
+                        hasPoints = config.verify_points > 0;
+                        break;
+                    case 'warn':
+                        hasPoints = config.warn_points > 0;
+                        break;
+                    case 'suspend':
+                        hasPoints = config.suspend_points > 0;
+                        break;
+                    case 'modmail_reply':
+                        hasPoints = config.modmail_reply_points > 0;
+                        break;
+                    case 'editname':
+                        hasPoints = config.editname_points > 0;
+                        break;
+                    case 'addnote':
+                        hasPoints = config.addnote_points > 0;
+                        break;
+                }
+
+                return hasPoints;
             });
 
             if (relevantConfigs.length === 0) {
-                // No quota roles with moderation points configured for this user
+                // No quota roles with points configured for this command type
                 return reply.send({
                     points_awarded: 0,
-                    message: 'No moderation points configured for your roles',
+                    message: `No points configured for ${cmdType} command in your roles`,
                 });
             }
 
             // Award points for each relevant role
             let totalPointsAwarded = 0;
             for (const config of relevantConfigs) {
+                // Determine points based on command type
+                let pointsToAward = 0;
+                switch (cmdType) {
+                    case 'verify':
+                        pointsToAward = config.verify_points;
+                        break;
+                    case 'warn':
+                        pointsToAward = config.warn_points;
+                        break;
+                    case 'suspend':
+                        pointsToAward = config.suspend_points;
+                        break;
+                    case 'modmail_reply':
+                        pointsToAward = config.modmail_reply_points;
+                        break;
+                    case 'editname':
+                        pointsToAward = config.editname_points;
+                        break;
+                    case 'addnote':
+                        pointsToAward = config.addnote_points;
+                        break;
+                }
+
                 const event = await logQuotaEvent(
                     guild_id,
                     user_id,
-                    'verify_member',
-                    `verification:${Date.now()}:${user_id}`, // Unique subject_id per verification
-                    undefined, // No dungeon key for verifications
-                    config.moderation_points // Use the configured moderation_points
+                    'verify_member', // Keep existing action_type for compatibility
+                    `${cmdType}:${Date.now()}:${user_id}`, // Unique subject_id per action
+                    undefined, // No dungeon key for moderation actions
+                    pointsToAward
                 );
 
                 if (event) {
