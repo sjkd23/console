@@ -65,6 +65,18 @@ export const taken: SlashCommand = {
         try {
             const { activeRuns } = await getActiveRunsByOrganizer(guild.id, interaction.user.id);
             
+            logger.debug('Retrieved active runs for organizer', {
+                guildId: guild.id,
+                organizerId: interaction.user.id,
+                activeRunCount: activeRuns.length,
+                activeRuns: activeRuns.map(r => ({
+                    id: r.id,
+                    dungeonLabel: r.dungeonLabel,
+                    status: r.status,
+                    createdAt: r.createdAt
+                }))
+            });
+            
             if (activeRuns.length === 0) {
                 await interaction.editReply(
                     '❌ **No Active Run Found**\n\n' +
@@ -78,12 +90,31 @@ export const taken: SlashCommand = {
                 logger.error('Multiple active runs detected for organizer', {
                     guildId: guild.id,
                     organizerId: interaction.user.id,
-                    activeRunCount: activeRuns.length
+                    activeRunCount: activeRuns.length,
+                    activeRuns: activeRuns.map(r => ({
+                        id: r.id,
+                        dungeonLabel: r.dungeonLabel,
+                        dungeonKey: r.dungeonLabel, // Log dungeon label for debugging
+                        status: r.status,
+                        createdAt: r.createdAt,
+                        channelId: r.channelId,
+                        postMessageId: r.postMessageId
+                    }))
                 });
+                
+                // Build detailed error message listing all active runs
+                const runsList = activeRuns
+                    .map((r, idx) => `${idx + 1}. **${r.dungeonLabel}** (Status: ${r.status}, ID: ${r.id})`)
+                    .join('\n');
+                
                 await interaction.editReply(
                     '❌ **Multiple Active Runs Detected**\n\n' +
+                    `You somehow have **${activeRuns.length}** active runs:\n\n` +
+                    `${runsList}\n\n` +
                     'This is unexpected. Please contact a server admin for assistance.\n\n' +
-                    '**Technical info:** You have multiple active runs, but the system should only allow one at a time.'
+                    '**Technical info:** You have multiple active runs, but the system should only allow one at a time. ' +
+                    'This may indicate a bug with headcount conversion or run cleanup. ' +
+                    'Please end all your runs manually using the Organizer Panel.'
                 );
                 return;
             }

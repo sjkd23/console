@@ -21,6 +21,7 @@ import { logRaidCreation } from '../../lib/logging/raid-logger.js';
 import { getDungeonRolePings } from '../../lib/utilities/http.js';
 import { registerHeadcount } from '../../lib/state/active-headcount-tracker.js';
 import { createLogger } from '../../lib/logging/logger.js';
+import { getReactionInfo } from '../../constants/emojis/MappedAfkCheckReactions.js';
 import {
     checkOrganizerActiveActivities,
     buildActiveRunErrorForHeadcount,
@@ -30,6 +31,28 @@ import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.
 import { buildRunMessageContent } from '../../lib/utilities/run-message-helpers.js';
 
 const logger = createLogger('Headcount');
+
+/**
+ * Get emoji identifier for a key reaction (by mapKey)
+ */
+function getKeyReactionEmojiIdentifier(mapKey: string): string | undefined {
+    const reactionInfo = getReactionInfo(mapKey);
+    return reactionInfo?.emojiInfo?.identifier;
+}
+
+/**
+ * Format key button label for display
+ */
+function formatKeyButtonLabel(mapKey: string): string {
+    const specialCases: Record<string, string> = {
+        'WC_INC': 'Inc',
+        'SHIELD_RUNE': 'Shield',
+        'SWORD_RUNE': 'Sword',
+        'HELM_RUNE': 'Helm',
+    };
+    
+    return specialCases[mapKey] || 'Key';
+}
 
 export const headcount: SlashCommand = {
     requiredRole: 'organizer',
@@ -247,10 +270,7 @@ async function createHeadcountPanel(
                 embed.setThumbnail(dungeon.portalLink.url);
             }
             
-            // Add Keys field if the dungeon has key reactions
-            if (dungeon.keyReactions && dungeon.keyReactions.length > 0) {
-                embed.addFields({ name: 'Keys', value: '0', inline: false });
-            }
+            // Note: We don't add a "Keys" field anymore - key details are shown in the description
         } else {
             // Multiple dungeons: Cleaner multi-dungeon display
             const dungeonList = selectedDungeons
@@ -286,68 +306,113 @@ async function createHeadcountPanel(
         const buttonRows: ActionRowBuilder<ButtonBuilder>[] = [];
         
         if (isSingleDungeon) {
-            // Single dungeon: Key button between Join and Organizer Panel
-            const mainRow = new ActionRowBuilder<ButtonBuilder>().addComponents(joinButton);
+            // Single dungeon: Smart layout based on number of keys
+            const timestamp = Date.now();
+            const keyButtons: ButtonBuilder[] = [];
             
-            // Add key button if dungeon has keys
+            // Create key buttons for all key reactions (supports Oryx 3's multiple keys)
             if (dungeon.keyReactions && dungeon.keyReactions.length > 0) {
-                const keyReaction = dungeon.keyReactions[0];
-                const keyEmojiId = getDungeonKeyEmojiIdentifier(dungeon.codeName);
-                
-                const keyButton = new ButtonBuilder()
-                    .setCustomId(`headcount:key:${Date.now()}:${dungeon.codeName}`)
-                    .setLabel('Key')
-                    .setStyle(ButtonStyle.Secondary);
-                
-                if (keyEmojiId) {
-                    keyButton.setEmoji(keyEmojiId);
+                for (const keyReaction of dungeon.keyReactions) {
+                    const keyEmojiId = getKeyReactionEmojiIdentifier(keyReaction.mapKey);
+                    const keyLabel = formatKeyButtonLabel(keyReaction.mapKey);
+                    
+                    const keyButton = new ButtonBuilder()
+                        .setCustomId(`headcount:key:${timestamp}:${dungeon.codeName}:${keyReaction.mapKey}`)
+                        .setLabel(keyLabel)
+                        .setStyle(ButtonStyle.Secondary);
+                    
+                    if (keyEmojiId) {
+                        keyButton.setEmoji(keyEmojiId);
+                    }
+                    
+                    keyButtons.push(keyButton);
                 }
-                
-                mainRow.addComponents(keyButton);
             }
             
-            mainRow.addComponents(orgButton);
-            buttonRows.push(mainRow);
+            // Layout logic: Max 5 buttons per row
+            // Row 1: Join + up to 3 keys + Organizer Panel (if total <= 5)
+            // Otherwise: Row 1: Join + some keys, Row 2: remaining keys + Organizer Panel
+            const totalButtons = 2 + keyButtons.length; // Join + keys + Organizer Panel
+            
+            if (totalButtons <= 5) {
+                // All buttons fit in one row: Join, keys, Organizer Panel
+                const mainRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    joinButton,
+                    ...keyButtons,
+                    orgButton
+                );
+                buttonRows.push(mainRow);
+            } else {
+                // Need multiple rows
+                // Row 1: Join + first keys (fill to 5 buttons)
+                const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(joinButton);
+                let row1Space = 4; // 5 total - 1 (join button)
+                const row1Keys = keyButtons.slice(0, row1Space);
+                row1.addComponents(...row1Keys);
+                buttonRows.push(row1);
+                
+                // Row 2: Remaining keys + Organizer Panel
+                const remainingKeys = keyButtons.slice(row1Space);
+                const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                    ...remainingKeys,
+                    orgButton
+                );
+                buttonRows.push(row2);
+            }
         } else {
             // Multiple dungeons: Join and Organizer Panel on first row
             const mainRow = new ActionRowBuilder<ButtonBuilder>().addComponents(joinButton, orgButton);
             buttonRows.push(mainRow);
             
-            // Key buttons on separate rows with custom layout
+            // Collect all key buttons from all selected dungeons
             const keyButtons: ButtonBuilder[] = [];
+            const timestamp = Date.now();
             
             for (const selectedDungeon of selectedDungeons) {
-                const keyEmojiId = getDungeonKeyEmojiIdentifier(selectedDungeon.codeName);
-                
-                const keyButton = new ButtonBuilder()
-                    .setCustomId(`headcount:key:${Date.now()}:${selectedDungeon.codeName}`)
-                    .setLabel(selectedDungeon.dungeonName.length > 15 
-                        ? selectedDungeon.dungeonName.substring(0, 13) + '...' 
-                        : selectedDungeon.dungeonName)
-                    .setStyle(ButtonStyle.Secondary);
+                // For each dungeon, add buttons for all its key reactions
+                if (selectedDungeon.keyReactions && selectedDungeon.keyReactions.length > 0) {
+                    for (const keyReaction of selectedDungeon.keyReactions) {
+                        const keyEmojiId = getKeyReactionEmojiIdentifier(keyReaction.mapKey);
+                        
+                        // Format label based on whether dungeon has multiple key types
+                        let label: string;
+                        if (selectedDungeon.keyReactions.length === 1) {
+                            // Single key: show dungeon name
+                            label = selectedDungeon.dungeonName.length > 15 
+                                ? selectedDungeon.dungeonName.substring(0, 13) + '...' 
+                                : selectedDungeon.dungeonName;
+                        } else {
+                            // Multiple keys: show just the key type name
+                            label = formatKeyButtonLabel(keyReaction.mapKey);
+                        }
+                        
+                        const keyButton = new ButtonBuilder()
+                            .setCustomId(`headcount:key:${timestamp}:${selectedDungeon.codeName}:${keyReaction.mapKey}`)
+                            .setLabel(label)
+                            .setStyle(ButtonStyle.Secondary);
 
-                // Add emoji if available
-                if (keyEmojiId) {
-                    keyButton.setEmoji(keyEmojiId);
+                        // Add emoji if available
+                        if (keyEmojiId) {
+                            keyButton.setEmoji(keyEmojiId);
+                        }
+
+                        keyButtons.push(keyButton);
+                    }
                 }
-
-                keyButtons.push(keyButton);
             }
 
-            // Smart button layout based on dungeon count
-            const numDungeons = keyButtons.length;
+            // Smart button layout: max 5 buttons per row, up to 4 additional rows
+            // Total max: 5 buttons (main row) + 20 buttons (4 additional rows) = 25 total
+            let currentRow: ButtonBuilder[] = [];
             
-            if (numDungeons === 4) {
-                // 4 dungeons: 2 buttons on row 2, 2 buttons on row 3
-                buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(keyButtons[0], keyButtons[1]));
-                buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(keyButtons[2], keyButtons[3]));
-            } else if (numDungeons === 5) {
-                // 5 dungeons: 3 buttons on row 2, 2 buttons on row 3
-                buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(keyButtons[0], keyButtons[1], keyButtons[2]));
-                buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(keyButtons[3], keyButtons[4]));
-            } else {
-                // For 2-3 dungeons: all keys on one row
-                buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...keyButtons));
+            for (let i = 0; i < keyButtons.length && buttonRows.length < 5; i++) {
+                currentRow.push(keyButtons[i]);
+                
+                // Create new row when we have 5 buttons or at the end
+                if (currentRow.length === 5 || i === keyButtons.length - 1) {
+                    buttonRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...currentRow));
+                    currentRow = [];
+                }
             }
         }
 

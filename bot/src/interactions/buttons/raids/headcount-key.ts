@@ -8,21 +8,23 @@ import { setEmbedField } from '../../../lib/ui/embed-builders.js';
 import { dungeonByCode } from '../../../constants/dungeons/dungeon-helpers.js';
 import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
 import { logKeyReaction } from '../../../lib/logging/raid-logger.js';
+import { getReactionInfo } from '../../../constants/emojis/MappedAfkCheckReactions.js';
 
 /**
  * In-memory storage for key offers per headcount panel.
- * Map structure: messageId -> dungeonCode -> Set<userId>
+ * Map structure: messageId -> dungeonCode -> mapKey -> Set<userId>
+ * This supports multiple key types per dungeon (e.g., Oryx 3 with 4 different keys)
  */
-const keyOffersStore = new Map<string, Map<string, Set<string>>>();
+const keyOffersStore = new Map<string, Map<string, Map<string, Set<string>>>>();
 
 /**
  * Get key offers for a specific headcount panel.
  * EXPORTED for use by headcount organizer panel.
  */
-export function getKeyOffers(messageId: string): Map<string, Set<string>> {
+export function getKeyOffers(messageId: string): Map<string, Map<string, Set<string>>> {
     let keyMap = keyOffersStore.get(messageId);
     if (!keyMap) {
-        keyMap = new Map<string, Set<string>>();
+        keyMap = new Map<string, Map<string, Set<string>>>();
         keyOffersStore.set(messageId, keyMap);
     }
     return keyMap;
@@ -40,10 +42,12 @@ export function clearKeyOffers(messageId: string): void {
  * Update the "Total Keys" or "Keys" field to show total count.
  * Handles both multi-dungeon ("Total Keys") and single-dungeon ("Keys") formats.
  */
-function updateTotalKeys(embed: EmbedBuilder, keyOffers: Map<string, Set<string>>): EmbedBuilder {
+function updateTotalKeys(embed: EmbedBuilder, keyOffers: Map<string, Map<string, Set<string>>>): EmbedBuilder {
     let totalKeys = 0;
-    for (const userIds of keyOffers.values()) {
-        totalKeys += userIds.size;
+    for (const mapKeyMap of keyOffers.values()) {
+        for (const userIds of mapKeyMap.values()) {
+            totalKeys += userIds.size;
+        }
     }
     
     // Try to update "Total Keys" first (multi-dungeon), then "Keys" (single-dungeon)
@@ -64,25 +68,44 @@ function updateTotalKeys(embed: EmbedBuilder, keyOffers: Map<string, Set<string>
 
 /**
  * Update the embed description to show per-dungeon key counts.
+ * For dungeons with multiple key types (like Oryx 3), shows each key type separately.
  */
-function updateKeyCountsInDescription(embed: EmbedBuilder, keyOffers: Map<string, Set<string>>): EmbedBuilder {
+function updateKeyCountsInDescription(embed: EmbedBuilder, keyOffers: Map<string, Map<string, Set<string>>>): EmbedBuilder {
     const data = embed.toJSON();
     let description = data.description || '';
     
     // Remove existing "Key Counts:" section
     description = description.replace(/\n\n\*\*Key Counts:\*\*\n[\s\S]*?(?=\n\n|$)/, '');
     
-    // Build key counts section with emojis only
+    // Build key counts section with individual key types
     const keyCountLines: string[] = [];
-    for (const [dungeonCode, userIds] of keyOffers.entries()) {
-        if (userIds.size > 0) {
-            const dungeon = dungeonByCode[dungeonCode];
-            const dungeonName = dungeon?.dungeonName || dungeonCode;
-            
-            // Get the dungeon-specific key emoji
-            const keyEmoji = getDungeonKeyEmoji(dungeonCode);
-            
-            keyCountLines.push(`${keyEmoji} ${dungeonName}: **${userIds.size}**`);
+    
+    for (const [dungeonCode, mapKeyMap] of keyOffers.entries()) {
+        const dungeon = dungeonByCode[dungeonCode];
+        const dungeonName = dungeon?.dungeonName || dungeonCode;
+        
+        // Check if this dungeon has multiple key types defined (not just how many have reactions)
+        const dungeonHasMultipleKeyTypes = dungeon?.keyReactions && dungeon.keyReactions.length > 1;
+        
+        for (const [mapKey, userIds] of mapKeyMap.entries()) {
+            if (userIds.size > 0) {
+                // Get emoji for this specific key type
+                const keyEmoji = getEmojiDisplayForKeyType(mapKey);
+                
+                // Format the key type name
+                const keyTypeName = formatKeyTypeForDisplay(mapKey);
+                
+                // For dungeons with multiple key types (like Oryx 3), show just "Key Type: count"
+                // For single-key dungeons, show "Dungeon: count"
+                let displayText: string;
+                if (dungeonHasMultipleKeyTypes) {
+                    displayText = `${keyEmoji} ${keyTypeName}: **${userIds.size}**`;
+                } else {
+                    displayText = `${keyEmoji} ${dungeonName}: **${userIds.size}**`;
+                }
+                
+                keyCountLines.push(displayText);
+            }
         }
     }
     
@@ -94,12 +117,47 @@ function updateKeyCountsInDescription(embed: EmbedBuilder, keyOffers: Map<string
 }
 
 /**
+ * Get emoji display string for a key type.
+ */
+function getEmojiDisplayForKeyType(keyType: string): string {
+    const reactionInfo = getReactionInfo(keyType);
+    if (!reactionInfo?.emojiInfo?.identifier) return '🗝️';
+
+    const idOrChar = reactionInfo.emojiInfo.identifier;
+
+    if (reactionInfo.emojiInfo.isCustom) {
+        return `<:key:${idOrChar}>`;
+    }
+
+    return idOrChar;
+}
+
+/**
+ * Format key type for user-friendly display
+ */
+function formatKeyTypeForDisplay(mapKey: string): string {
+    const specialCases: Record<string, string> = {
+        'WC_INC': 'Wine Cellar Incantation',
+        'SHIELD_RUNE': 'Shield Rune',
+        'SWORD_RUNE': 'Sword Rune',
+        'HELM_RUNE': 'Helm Rune',
+    };
+    
+    return specialCases[mapKey] || mapKey.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+}
+
+/**
  * Handle key button click for headcount panel.
+ * @param btn The button interaction
+ * @param panelTimestamp The timestamp from the button custom ID
+ * @param dungeonCode The dungeon code (e.g., "ORYX_3")
+ * @param mapKey Optional specific key type (e.g., "WC_INC", "SHIELD_RUNE"). If not provided, uses first key reaction.
  */
 export async function handleHeadcountKey(
     btn: ButtonInteraction,
     panelTimestamp: string,
-    dungeonCode: string
+    dungeonCode: string,
+    mapKey?: string
 ) {
     await btn.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -113,26 +171,49 @@ export async function handleHeadcountKey(
     const embed = EmbedBuilder.from(embeds[0]);
     const keyOffers = getKeyOffers(msg.id);
 
-    // Get or create the set for this dungeon
-    let dungeonKeys = keyOffers.get(dungeonCode);
-    if (!dungeonKeys) {
-        dungeonKeys = new Set<string>();
-        keyOffers.set(dungeonCode, dungeonKeys);
-    }
-
-    // Toggle key offer for this user & dungeon
-    const userId = btn.user.id;
-    let message: string;
-
+    // Get dungeon info
     const dungeon = dungeonByCode[dungeonCode];
     const dungeonName = dungeon?.dungeonName || dungeonCode;
 
-    if (dungeonKeys.has(userId)) {
-        dungeonKeys.delete(userId);
-        message = `✅ **Key offer removed for ${dungeonName}**`;
+    // Determine which key type to use
+    let actualMapKey = mapKey;
+    if (!actualMapKey && dungeon?.keyReactions && dungeon.keyReactions.length > 0) {
+        // If no mapKey provided, use the first key reaction (backward compatibility)
+        actualMapKey = dungeon.keyReactions[0].mapKey;
+    }
+    
+    if (!actualMapKey) {
+        await btn.editReply('❌ Invalid key type.');
+        return;
+    }
+
+    // Get or create the nested map for this dungeon
+    let dungeonKeyMap = keyOffers.get(dungeonCode);
+    if (!dungeonKeyMap) {
+        dungeonKeyMap = new Map<string, Set<string>>();
+        keyOffers.set(dungeonCode, dungeonKeyMap);
+    }
+
+    // Get or create the set for this specific key type
+    let keyTypeSet = dungeonKeyMap.get(actualMapKey);
+    if (!keyTypeSet) {
+        keyTypeSet = new Set<string>();
+        dungeonKeyMap.set(actualMapKey, keyTypeSet);
+    }
+
+    // Toggle key offer for this user
+    const userId = btn.user.id;
+    let message: string;
+
+    // Format key type for display
+    const keyTypeDisplay = formatKeyTypeForDisplay(actualMapKey);
+
+    if (keyTypeSet.has(userId)) {
+        keyTypeSet.delete(userId);
+        message = `✅ **${keyTypeDisplay} offer removed for ${dungeonName}**`;
     } else {
-        dungeonKeys.add(userId);
-        message = `✅ **You have offered a key for ${dungeonName}!**\n\nThe organizer can see your key offer.`;
+        keyTypeSet.add(userId);
+        message = `✅ **You have offered a ${keyTypeDisplay} for ${dungeonName}!**\n\nThe organizer can see your key offer.`;
     }
 
     // Update embed description with new state
@@ -148,6 +229,14 @@ export async function handleHeadcountKey(
             const organizerId = organizerMatch ? organizerMatch[1] : '';
             
             if (organizerId) {
+                // Count total keys for this dungeon
+                let totalDungeonKeys = 0;
+                if (dungeonKeyMap) {
+                    for (const userIds of dungeonKeyMap.values()) {
+                        totalDungeonKeys += userIds.size;
+                    }
+                }
+                
                 await logKeyReaction(
                     btn.client,
                     {
@@ -159,9 +248,9 @@ export async function handleHeadcountKey(
                         panelTimestamp: panelTimestamp
                     },
                     btn.user.id,
-                    dungeonName,
-                    dungeonKeys.has(userId) ? 'added' : 'removed',
-                    dungeonKeys.size
+                    keyTypeDisplay,
+                    keyTypeSet.has(userId) ? 'added' : 'removed',
+                    totalDungeonKeys
                 );
             }
         } catch (e) {

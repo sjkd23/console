@@ -10,6 +10,7 @@ import { withButtonLock, getRunLockKey } from '../../../lib/utilities/button-mut
 import { createLogger } from '../../../lib/logging/logger.js';
 import { clearRunReactions } from '../../../lib/utilities/run-reactions.js';
 import { updateQuotaPanelsForUser } from '../../../lib/ui/quota-panel.js';
+import { refreshOrganizerPanel } from './organizer-panel.js';
 
 const logger = createLogger('RunStatus');
 
@@ -143,18 +144,6 @@ async function handleStatusInternal(
                 if (errorData?.missing?.party) missing.push('**Party**');
                 if (errorData?.missing?.location) missing.push('**Location**');
 
-                // Send a separate ephemeral follow-up message, keeping the panel intact
-                await btn.followUp({
-                    content:
-                        `❌ **Cannot Start Run**\n\n` +
-                        `You must set ${missing.join(' and ')} before starting the run.\n\n` +
-                        `**How to fix:**\n` +
-                        `• Use the "Set Party" button to enter the party name\n` +
-                        `• Use the "Set Location" button to enter the server/location\n` +
-                        `• Then try clicking "Start" again`,
-                    flags: MessageFlags.Ephemeral
-                });
-
                 logger.info('Run start blocked - missing party/location', {
                     runId,
                     guildId,
@@ -162,29 +151,40 @@ async function handleStatusInternal(
                     missingParty: errorData?.missing?.party,
                     missingLocation: errorData?.missing?.location
                 });
+
+                // Show error in the panel itself
+                await refreshOrganizerPanel(
+                    btn, 
+                    runId, 
+                    `❌ **Cannot Start Run**\n\n` +
+                    `You must set ${missing.join(' and ')} before starting the run.\n\n` +
+                    `**How to fix:**\n` +
+                    `• Use the "Set Party/Loc" button to enter party and location\n` +
+                    `• Then try clicking "Start" again`
+                );
                 return;
             }
             if (err.code === 'MISSING_SCREENSHOT') {
-                // Send a separate ephemeral follow-up message, keeping the panel intact
-                await btn.followUp({
-                    content:
-                        `❌ **Cannot Start Oryx 3 Run**\n\n` +
-                        `You must submit a completion screenshot before starting Oryx 3 runs.\n\n` +
-                        `**How to submit:**\n` +
-                        `• Use the \`/taken\` command in the raid channel\n` +
-                        `• Attach your screenshot with the \`screenshot\` option\n` +
-                        `• Screenshot must be fullscreen showing \`/who\` and \`/server\` in chat\n\n` +
-                        `**Why is this required?**\n` +
-                        'O3 runs require a taken screenshot to prove that our organizers made sure to check if the location was available.\n\n' +
-                        '⏱️ **You must submit a screenshot before starting the run.**',
-                    flags: MessageFlags.Ephemeral
-                });
-
                 logger.info('Oryx 3 run start blocked - missing screenshot', {
                     runId,
                     guildId,
                     userId: btn.user.id
                 });
+
+                // Show error in the panel itself
+                await refreshOrganizerPanel(
+                    btn,
+                    runId,
+                    `❌ **Cannot Start Oryx 3 Run**\n\n` +
+                    `You must submit a completion screenshot before starting Oryx 3 runs.\n\n` +
+                    `**How to submit:**\n` +
+                    `• Use the \`/taken\` command in the raid channel\n` +
+                    `• Attach your screenshot with the \`screenshot\` option\n` +
+                    `• Screenshot must be fullscreen showing \`/who\` and \`/server\` in chat\n\n` +
+                    `**Why is this required?**\n` +
+                    'O3 runs require a taken screenshot to prove that our organizers made sure to check if the location was available.\n\n' +
+                    '⏱️ **You must submit a screenshot before starting the run.**'
+                );
                 return;
             }
         }

@@ -6,6 +6,7 @@ import { sendKeyPoppedPing } from '../../../lib/utilities/run-ping.js';
 import { getDefaultKeyWindowSeconds } from '../../../config/raid-config.js';
 import { updateQuotaPanelsForUser } from '../../../lib/ui/quota-panel.js';
 import { createLogger } from '../../../lib/logging/logger.js';
+import { refreshOrganizerPanel } from './organizer-panel.js';
 
 const logger = createLogger('KeyWindow');
 
@@ -135,22 +136,22 @@ export async function handleKeyWindow(btn: ButtonInteraction, runId: string) {
             });
         });
 
-        // Confirm to organizer
-        await btn.editReply({ content: `${keyEmoji} Key popped! Party join window started.` });
+        // Refresh organizer panel with confirmation message
+        await refreshOrganizerPanel(btn, runId, `${keyEmoji} **Key popped!** Party join window started.`);
 
     } catch (err) {
         if (err instanceof BackendError) {
             if (err.code === 'NOT_ORGANIZER') {
-                await btn.editReply({ content: 'Only the organizer can pop keys.', components: [] });
+                await refreshOrganizerPanel(btn, runId, '❌ Only the organizer can pop keys.');
                 return;
             }
             if (err.code === 'RUN_NOT_LIVE') {
-                await btn.editReply({ content: 'You can only pop keys during Live.', components: [] });
+                await refreshOrganizerPanel(btn, runId, '❌ You can only pop keys during Live.');
                 return;
             }
         }
         const msg = err instanceof Error ? err.message : 'Unknown error';
-        await btn.editReply({ content: `Error: ${msg}`, components: [] });
+        await btn.editReply({ content: `Error: ${msg}`, embeds: [], components: [] });
     }
 }
 

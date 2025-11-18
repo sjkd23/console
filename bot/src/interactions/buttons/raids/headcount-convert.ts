@@ -27,6 +27,8 @@ import { logRaidCreation } from '../../../lib/logging/raid-logger.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 import { withButtonLock, getHeadcountLockKey } from '../../../lib/utilities/button-mutex.js';
 import { getDefaultAutoEndMinutes } from '../../../config/raid-config.js';
+import { unregisterHeadcount } from '../../../lib/state/active-headcount-tracker.js';
+import { createRunRole } from '../../../lib/utilities/run-role-manager.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
     // CRITICAL: Wrap in mutex to prevent concurrent conversion
@@ -124,16 +126,11 @@ async function handleHeadcountConvertInternal(btn: ButtonInteraction, publicMess
     }
 
     // Multiple dungeons - show dropdown to select which one to convert
-    // First, update the organizer panel to remove buttons (prevent double-clicks)
+    // Replace the organizer panel with the dropdown (don't create new message)
     await btn.update({
-        components: [] // Remove End/Convert buttons
-    });
-
-    // Now show the dropdown as a follow-up
-    const followUpMsg = await btn.followUp({
         content: '**Select a dungeon to convert to a run**\n\nKey reactions for the selected dungeon will be preserved.',
         components: [createDungeonSelectMenu(dungeonCodes)],
-        flags: MessageFlags.Ephemeral
+        embeds: [] // Remove the organizer panel embed
     });
 
     // Wait for selection
@@ -148,13 +145,8 @@ async function handleHeadcountConvertInternal(btn: ButtonInteraction, publicMess
 
         const selectedCode = selectInteraction.values[0];
         
-        // Update the dropdown to show confirmation
-        await selectInteraction.editReply({
-            content: `✅ **Converting to run...**`,
-            components: []
-        });
-
         // Convert the headcount to a run
+        // The conversion function will update the same message with the organizer panel
         await convertHeadcountToRun(selectInteraction, publicMsg, selectedCode, btn.user.id);
 
     } catch (err) {
@@ -163,9 +155,10 @@ async function handleHeadcountConvertInternal(btn: ButtonInteraction, publicMess
             ? `Failed to convert headcount: ${err.message}`
             : 'Selection timed out. Please try again.';
         
-        await followUpMsg.edit({
+        await btn.editReply({
             content: errorMessage,
-            components: []
+            components: [],
+            embeds: []
         });
     }
 }
@@ -232,9 +225,29 @@ async function convertHeadcountToRun(
 
     // Get key offers for the selected dungeon
     const keyOffers = getKeyOffers(publicMsg.id);
-    const dungeonKeys = keyOffers.get(dungeonCode);
-    const keyUserIds = dungeonKeys ? Array.from(dungeonKeys) : [];
+    const dungeonKeyMap = keyOffers.get(dungeonCode);
+    
+    // Collect all unique users who offered any key type for this dungeon
+    const keyUserIds: string[] = [];
+    if (dungeonKeyMap) {
+        const uniqueUsers = new Set<string>();
+        for (const userIds of dungeonKeyMap.values()) {
+            userIds.forEach(id => uniqueUsers.add(id));
+        }
+        keyUserIds.push(...Array.from(uniqueUsers));
+    }
+    
     const guildId = interaction.guildId!;
+
+    // Create the temporary role for this run
+    const role = await createRunRole(interaction.guild, interaction.user.username, dungeon.dungeonName);
+    if (!role) {
+        await interaction.followUp({
+            content: '**Warning:** Failed to create the run role. The run will still be created, but members won\'t be automatically assigned a role.',
+            flags: MessageFlags.Ephemeral
+        });
+        // Continue anyway - role creation failure shouldn't block run creation
+    }
 
     // Create the run in the backend (use the channel where the headcount was posted)
     const { runId } = await postJSON<{ runId: number }>('/runs', {
@@ -246,7 +259,8 @@ async function convertHeadcountToRun(
         channelId: publicMsg.channelId, // Use the channel where headcount was posted (should be raid channel)
         dungeonKey: dungeon.codeName,
         dungeonLabel: dungeon.dungeonName,
-        autoEndMinutes: getDefaultAutoEndMinutes()
+        autoEndMinutes: getDefaultAutoEndMinutes(),
+        roleId: role?.id // Store the created role ID
     }, { guildId });
 
     // If there are key reactions, register them with the backend
@@ -371,14 +385,18 @@ async function convertHeadcountToRun(
 
     // Clear headcount state from memory
     clearKeyOffers(publicMsg.id);
+    
+    // CRITICAL: Unregister the headcount from active tracking
+    // This prevents the "multiple runs" error when using /taken after converting a headcount
+    unregisterHeadcount(interaction.guild.id, organizerId);
 
-    // Send a NEW run organizer panel
+    // Build the run organizer panel (matching current format from organizer-panel.ts)
     const runOrgPanelEmbed = new EmbedBuilder()
         .setTitle(`Organizer Panel — ${dungeon.dungeonName}`)
         .setTimestamp(new Date());
 
     // Build description with key reaction users if any
-    let description = '✅ **Converted from headcount to run**\n\nUse the controls below to manage the raid.';
+    let description = 'Manage the raid with the controls below.';
 
     if (keyUserIds.length > 0) {
         description += '\n\n**Key Reacts:**';
@@ -394,7 +412,8 @@ async function convertHeadcountToRun(
 
     runOrgPanelEmbed.setDescription(description);
 
-    // Starting phase: Start, Cancel (row 1) + Set Party, Set Location (row 2)
+    // Starting phase controls (matching organizer-panel.ts format)
+    // Row 1: Start, Cancel
     const orgRow1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
             .setCustomId(`run:start:${runId}`)
@@ -405,21 +424,51 @@ async function convertHeadcountToRun(
             .setLabel('Cancel')
             .setStyle(ButtonStyle.Danger)
     );
-    const orgRow2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    
+    // Row 2: Set Party/Loc + Chain Amount (if not Oryx 3)
+    const orgRow2Components = [
         new ButtonBuilder()
-            .setCustomId(`run:setparty:${runId}`)
-            .setLabel('Set Party')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId(`run:setlocation:${runId}`)
-            .setLabel('Set Location')
+            .setCustomId(`run:setpartyloc:${runId}`)
+            .setLabel('Set Party/Loc')
             .setStyle(ButtonStyle.Secondary)
-    );
+    ];
+    
+    if (dungeon.codeName !== 'ORYX_3') {
+        orgRow2Components.push(
+            new ButtonBuilder()
+                .setCustomId(`run:setchain:${runId}`)
+                .setLabel('Chain Amount')
+                .setStyle(ButtonStyle.Secondary)
+        );
+    }
+    
+    const orgRow2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...orgRow2Components);
+    
+    const controls = [orgRow1, orgRow2];
+    
+    // Row 3: Screenshot button for Oryx 3
+    if (dungeon.codeName === 'ORYX_3') {
+        const screenshotRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`run:screenshot:${runId}`)
+                .setLabel('📸 Submit Screenshot')
+                .setStyle(ButtonStyle.Secondary)
+        );
+        controls.push(screenshotRow);
+    }
 
-    // Send the new run organizer panel as a follow-up
-    await interaction.followUp({
-        embeds: [runOrgPanelEmbed],
-        components: [orgRow1, orgRow2],
-        flags: MessageFlags.Ephemeral
-    });
+    // Update the organizer panel message (same ephemeral message) with the run organizer panel
+    if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+            content: '', // Clear any content
+            embeds: [runOrgPanelEmbed],
+            components: controls
+        });
+    } else {
+        await interaction.reply({
+            embeds: [runOrgPanelEmbed],
+            components: controls,
+            flags: MessageFlags.Ephemeral
+        });
+    }
 }

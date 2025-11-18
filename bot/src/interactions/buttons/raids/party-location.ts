@@ -13,6 +13,7 @@ import {
     getModalFieldValues
 } from '../../../lib/utilities/modal-helpers.js';
 import { buildRunMessageContent } from '../../../lib/utilities/run-message-helpers.js';
+import { refreshOrganizerPanel } from './organizer-panel.js';
 
 interface RunDetails {
     channelId: string | null;
@@ -191,19 +192,17 @@ export async function handleSetPartyLocation(btn: ButtonInteraction, runId: stri
     // Build confirmation message
     let confirmMsg = '';
     if (updatedParty && updatedLocation) {
-        confirmMsg = `✅ Updated:\n• Party: **${party}**\n• Location: **${location}**`;
+        confirmMsg = `✅ **Updated:**\n• Party: **${party}**\n• Location: **${location}**`;
     } else if (updatedParty) {
-        confirmMsg = `✅ Updated party: **${party}**`;
+        confirmMsg = `✅ **Updated Party:** ${party}`;
     } else if (updatedLocation) {
-        confirmMsg = `✅ Updated location: **${location}**`;
+        confirmMsg = `✅ **Updated Location:** ${location}`;
     } else {
         confirmMsg = '⚠️ No changes made (both fields left blank)';
     }
 
-    await submitted.followUp({ 
-        content: confirmMsg, 
-        ephemeral: true 
-    });
+    // Refresh organizer panel with confirmation message
+    await refreshOrganizerPanel(submitted, runId, confirmMsg);
 }
 
 /**
@@ -292,10 +291,9 @@ export async function handleSetParty(btn: ButtonInteraction, runId: string) {
         }
     }
 
-    await submitted.followUp({ 
-        content: party ? `✅ Party set to: **${party}**` : '✅ Party cleared', 
-        ephemeral: true 
-    });
+    // Refresh organizer panel with confirmation message
+    const confirmMsg = party ? `✅ **Updated Party:** ${party}` : '✅ Party cleared';
+    await refreshOrganizerPanel(submitted, runId, confirmMsg);
 }
 
 /**
@@ -384,10 +382,9 @@ export async function handleSetLocation(btn: ButtonInteraction, runId: string) {
         }
     }
 
-    await submitted.followUp({ 
-        content: location ? `✅ Location set to: **${location}**` : '✅ Location cleared', 
-        ephemeral: true 
-    });
+    // Refresh organizer panel with confirmation message
+    const confirmMsg = location ? `✅ **Updated Location:** ${location}` : '✅ Location cleared';
+    await refreshOrganizerPanel(submitted, runId, confirmMsg);
 }
 
 /**
@@ -522,9 +519,10 @@ export async function handleSetChainAmount(btn: ButtonInteraction, runId: string
         }
     }
 
-    const successMsg = `✅ Chain amount set to: **${chainAmount}**\n\nThe raid title will now show "Chain ${run.keyPopCount}/${chainAmount}" (updates as you press Key popped)`;
+    // Refresh organizer panel with confirmation message
+    const successMsg = `✅ **Chain amount set:** ${chainAmount}\n\nThe raid title will now show "Chain ${run.keyPopCount}/${chainAmount}" (updates as you press Key popped)`;
     if (deferred) {
-        await submitted.followUp({ content: successMsg, ephemeral: true });
+        await refreshOrganizerPanel(submitted, runId, successMsg);
     } else {
         await submitted.reply({ content: successMsg, ephemeral: true });
     }

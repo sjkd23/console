@@ -11,6 +11,7 @@ import {
 import { getJSON, patchJSON } from '../../../lib/utilities/http.js';
 import { createLogger } from '../../../lib/logging/logger.js';
 import { sendRealmScorePing } from '../../../lib/utilities/run-ping.js';
+import { refreshOrganizerPanel } from './organizer-panel.js';
 
 const logger = createLogger('RealmScore');
 
@@ -52,18 +53,16 @@ export async function handleRealmScore(btn: ButtonInteraction, runId: string) {
 
         // Validate input
         if (isNaN(scoreValue) || scoreValue < 1 || scoreValue > 99) {
-            await submitted.followUp({ 
-                content: '❌ Realm score must be a number between 1 and 99', 
-                ephemeral: true 
-            });
+            await refreshOrganizerPanel(submitted, runId, '❌ Realm score must be a number between 1 and 99');
             return;
         }
 
         const guildId = btn.guildId;
         if (!guildId) {
-            await submitted.followUp({ 
-                content: 'This command can only be used in a server.', 
-                ephemeral: true 
+            await submitted.editReply({ 
+                content: 'This command can only be used in a server.',
+                embeds: [],
+                components: []
             });
             return;
         }
@@ -85,27 +84,30 @@ export async function handleRealmScore(btn: ButtonInteraction, runId: string) {
         }>(`/runs/${runId}`, { guildId });
 
         if (!run.channelId || !run.postMessageId) {
-            await submitted.followUp({ 
-                content: 'Run record missing channel/message id.', 
-                ephemeral: true 
+            await submitted.editReply({ 
+                content: 'Run record missing channel/message id.',
+                embeds: [],
+                components: []
             });
             return;
         }
 
         const ch = await btn.client.channels.fetch(run.channelId).catch(() => null);
         if (!ch || ch.type !== ChannelType.GuildText) {
-            await submitted.followUp({ 
-                content: 'Could not locate run channel.', 
-                ephemeral: true 
+            await submitted.editReply({ 
+                content: 'Could not locate run channel.',
+                embeds: [],
+                components: []
             });
             return;
         }
 
         const pubMsg = await ch.messages.fetch(run.postMessageId).catch(() => null);
         if (!pubMsg) {
-            await submitted.followUp({ 
-                content: 'Public run message no longer exists.', 
-                ephemeral: true 
+            await submitted.editReply({ 
+                content: 'Public run message no longer exists.',
+                embeds: [],
+                components: []
             });
             return;
         }
@@ -113,9 +115,10 @@ export async function handleRealmScore(btn: ButtonInteraction, runId: string) {
         // Update the embed with the realm score
         const embeds = pubMsg.embeds ?? [];
         if (!embeds.length) {
-            await submitted.followUp({ 
-                content: 'Could not find run embed.', 
-                ephemeral: true 
+            await submitted.editReply({ 
+                content: 'Could not find run embed.',
+                embeds: [],
+                components: []
             });
             return;
         }
@@ -137,11 +140,8 @@ export async function handleRealmScore(btn: ButtonInteraction, runId: string) {
             realmScore: scoreValue
         });
 
-        // Confirm to organizer
-        await submitted.followUp({ 
-            content: `✅ Realm score set to ${scoreValue}% and raiders have been pinged!`, 
-            ephemeral: true 
-        });
+        // Refresh organizer panel with confirmation message
+        await refreshOrganizerPanel(submitted, runId, `✅ **Realm score set:** ${scoreValue}% (raiders have been pinged!)`);
 
     } catch (err) {
         logger.error('Failed to set realm score', {

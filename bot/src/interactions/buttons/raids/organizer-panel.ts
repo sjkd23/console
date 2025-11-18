@@ -4,7 +4,9 @@ import {
     ButtonBuilder,
     ButtonStyle,
     EmbedBuilder,
-    MessageFlags
+    MessageFlags,
+    MessageEditOptions,
+    ModalSubmitInteraction
 } from 'discord.js';
 import { getJSON } from '../../../lib/utilities/http.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
@@ -14,14 +16,21 @@ import { logButtonClick } from '../../../lib/logging/raid-logger.js';
 /**
  * Internal function to build and show the organizer panel.
  * Used by both initial access and confirmed access.
+ * @param confirmationMessage Optional message to show at the top of the panel (e.g., "✅ Party set to: USW3")
  */
-async function showOrganizerPanel(btn: ButtonInteraction, runId: number, guildId: string, run: {
-    status: string;
-    dungeonLabel: string;
-    dungeonKey: string;
-    organizerId: string;
-    screenshotUrl?: string | null;
-}) {
+async function showOrganizerPanel(
+    btn: ButtonInteraction | ModalSubmitInteraction, 
+    runId: number, 
+    guildId: string, 
+    run: {
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+        screenshotUrl?: string | null;
+    }, 
+    confirmationMessage?: string
+) {
     // Fetch key reaction users if there are key reactions for this dungeon
     let keyUsers: Record<string, string[]> = {};
     const keyUsersResponse = await getJSON<{ keyUsers: Record<string, string[]> }>(
@@ -39,7 +48,14 @@ async function showOrganizerPanel(btn: ButtonInteraction, runId: number, guildId
             .setTimestamp(new Date());
 
         // Build description with key reaction users if any
-        let description = 'Manage the raid with the controls below.';
+        let description = '';
+        
+        // Add confirmation message at the top if provided
+        if (confirmationMessage) {
+            description += `${confirmationMessage}\n\n`;
+        }
+        
+        description += 'Manage the raid with the controls below.';
 
         if (Object.keys(keyUsers).length > 0) {
             description += '\n\n**Key Reacts:**';        // Get the dungeon-specific key emoji (all keys for this dungeon use the same emoji)
@@ -341,4 +357,48 @@ export async function handleOrganizerPanelDeny(btn: ButtonInteraction, runId: st
         embeds: [],
         components: []
     });
+}
+
+/**
+ * Refresh the organizer panel with an optional confirmation message.
+ * This is used by action handlers to update the panel instead of sending new ephemeral messages.
+ * @param interaction The button or modal submit interaction (must be deferred/replied)
+ * @param runId The run ID
+ * @param confirmationMessage Optional confirmation message to display at the top
+ */
+export async function refreshOrganizerPanel(
+    interaction: ButtonInteraction | ModalSubmitInteraction,
+    runId: string,
+    confirmationMessage?: string
+) {
+    const guildId = interaction.guildId;
+    if (!guildId) {
+        await interaction.editReply({
+            content: 'This command can only be used in a server.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Fetch run details
+    const run = await getJSON<{
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+        screenshotUrl?: string | null;
+    }>(`/runs/${runId}`, { guildId }).catch(() => null);
+
+    if (!run) {
+        await interaction.editReply({
+            content: 'Could not fetch run details.',
+            embeds: [],
+            components: []
+        });
+        return;
+    }
+
+    // Show the updated panel with confirmation message
+    await showOrganizerPanel(interaction, parseInt(runId), guildId, run, confirmationMessage);
 }

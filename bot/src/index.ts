@@ -325,8 +325,11 @@ client.on('interactionCreate', async (interaction) => {
             }
             if (interaction.customId.startsWith('headcount:key:')) {
                 if (!await applyButtonRateLimit(interaction, 'run:key:headcount')) return;
-                const [, , panelTimestamp, dungeonCode] = interaction.customId.split(':');
-                await safeHandleInteraction(interaction, () => handleHeadcountKey(interaction, panelTimestamp, dungeonCode), { ephemeral: true });
+                const parts = interaction.customId.split(':');
+                const panelTimestamp = parts[2];
+                const dungeonCode = parts[3];
+                const mapKey = parts[4]; // Optional: specific key type (e.g., "WC_INC", "SHIELD_RUNE")
+                await safeHandleInteraction(interaction, () => handleHeadcountKey(interaction, panelTimestamp, dungeonCode, mapKey), { ephemeral: true });
                 return;
             }
             if (interaction.customId.startsWith('headcount:org:')) {

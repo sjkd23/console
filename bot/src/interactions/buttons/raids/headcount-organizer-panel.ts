@@ -19,6 +19,37 @@ import { getKeyOffers } from './headcount-key.js';
 import { dungeonByCode } from '../../../constants/dungeons/dungeon-helpers.js';
 import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
+import { getReactionInfo } from '../../../constants/emojis/MappedAfkCheckReactions.js';
+
+/**
+ * Format key type for user-friendly display
+ */
+function formatKeyTypeForDisplay(mapKey: string): string {
+    const specialCases: Record<string, string> = {
+        'WC_INC': 'Inc',
+        'SHIELD_RUNE': 'Shield',
+        'SWORD_RUNE': 'Sword',
+        'HELM_RUNE': 'Helm',
+    };
+    
+    return specialCases[mapKey] || mapKey.replace(/_/g, ' ');
+}
+
+/**
+ * Get emoji display string for a key type.
+ */
+function getEmojiDisplayForKeyType(keyType: string): string {
+    const reactionInfo = getReactionInfo(keyType);
+    if (!reactionInfo?.emojiInfo?.identifier) return '🗝️';
+
+    const idOrChar = reactionInfo.emojiInfo.identifier;
+
+    if (reactionInfo.emojiInfo.isCustom) {
+        return `<:key:${idOrChar}>`;
+    }
+
+    return idOrChar;
+}
 
 /**
  * Internal function to build and show the headcount organizer panel.
@@ -57,17 +88,35 @@ async function showHeadcountPanel(
         for (const dungeonCode of dungeonCodes) {
             const dungeon = dungeonByCode[dungeonCode];
             const dungeonName = dungeon?.dungeonName || dungeonCode;
-            const userIds = keyOffers.get(dungeonCode);
-            const count = userIds?.size || 0;
-
-            // Get the dungeon-specific key emoji
-            const keyEmoji = getDungeonKeyEmoji(dungeonCode);
-
-            if (count > 0) {
-                const mentions = Array.from(userIds!).map(id => `<@${id}>`).join(', ');
-                description += `\n${keyEmoji} **${dungeonName}** (${count}): ${mentions}`;
-            } else {
+            
+            // Check if this dungeon has multiple key types defined
+            const dungeonHasMultipleKeyTypes = dungeon?.keyReactions && dungeon.keyReactions.length > 1;
+            
+            // Get all key types for this dungeon
+            const dungeonKeyMap = keyOffers.get(dungeonCode);
+            
+            if (!dungeonKeyMap || dungeonKeyMap.size === 0) {
+                // No keys for this dungeon
+                const keyEmoji = getDungeonKeyEmoji(dungeonCode);
                 description += `\n${keyEmoji} **${dungeonName}**: _No keys_`;
+            } else {
+                // Show each key type separately
+                for (const [mapKey, userIds] of dungeonKeyMap.entries()) {
+                    const keyEmoji = getEmojiDisplayForKeyType(mapKey);
+                    const keyTypeName = formatKeyTypeForDisplay(mapKey);
+                    const count = userIds.size;
+                    
+                    // For dungeons with multiple key types (like Oryx 3), show just "Key Type"
+                    // For single-key dungeons, show "Dungeon"
+                    const label = dungeonHasMultipleKeyTypes ? keyTypeName : dungeonName;
+                    
+                    if (count > 0) {
+                        const mentions = Array.from(userIds).map(id => `<@${id}>`).join(', ');
+                        description += `\n${keyEmoji} **${label}** (${count}): ${mentions}`;
+                    } else {
+                        description += `\n${keyEmoji} **${label}**: _No keys_`;
+                    }
+                }
             }
         }
     }
