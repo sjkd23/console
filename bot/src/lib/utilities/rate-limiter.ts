@@ -58,7 +58,7 @@ export const RateLimitPresets = {
     /** Config commands - more restrictive (2 per 20s) */
     COMMAND_CONFIG: {
         maxRequests: 2,
-        windowMs: 20_000,
+        windowMs: 5_000,
         errorMessage: '⏱️ **Slow down!** Configuration commands are rate limited. Please wait before making more changes.'
     } as RateLimitConfig,
 

@@ -33,12 +33,14 @@ import { handleHeadcountConvert } from './interactions/buttons/raids/headcount-c
 import {
     handleQuotaConfigBasic,
     handleQuotaConfigModeration,
+    handleQuotaConfigBasePoints,
     handleQuotaConfigDungeons,
     handleQuotaRefreshPanel,
     handleQuotaResetPanel,
     handleQuotaConfigStop,
     handleQuotaBasicModal,
     handleQuotaModerationModal,
+    handleQuotaBasePointsModal,
     handleQuotaDungeonModal,
     handleQuotaSelectDungeon,
 } from './interactions/buttons/config/quota-config.js';
@@ -264,6 +266,11 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId.startsWith('quota_config_basic:')) {
                 if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
                 await safeHandleInteraction(interaction, () => handleQuotaConfigBasic(interaction), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('quota_config_base_points:')) {
+                if (!await applyButtonRateLimit(interaction, 'quota_config_panel')) return;
+                await safeHandleInteraction(interaction, () => handleQuotaConfigBasePoints(interaction), { ephemeral: true });
                 return;
             }
             if (interaction.customId.startsWith('quota_config_moderation:')) {
@@ -516,6 +523,10 @@ client.on('interactionCreate', async (interaction) => {
             }
             if (interaction.customId.startsWith('quota_basic_modal:')) {
                 await safeHandleInteraction(interaction, () => handleQuotaBasicModal(interaction), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('quota_base_points_modal:')) {
+                await safeHandleInteraction(interaction, () => handleQuotaBasePointsModal(interaction), { ephemeral: true });
                 return;
             }
             if (interaction.customId.startsWith('quota_moderation_modal:')) {

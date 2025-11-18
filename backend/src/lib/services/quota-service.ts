@@ -328,7 +328,7 @@ export class QuotaService {
     /**
      * Get the point value for a specific dungeon considering all of the user's roles.
      * Returns the HIGHEST point value found across all the user's roles that have quota configs.
-     * If no override exists for any role, returns the default of 1 point.
+     * Priority: dungeon override > base exalt/non-exalt points > default 1
      * 
      * This is a copy of getPointsForDungeon from quota.ts, kept here to encapsulate
      * all quota logic in one place.
@@ -339,9 +339,13 @@ export class QuotaService {
         userRoleIds?: string[],
         db: PoolClient | typeof pool = pool
     ): Promise<number> {
+        const { isExaltDungeon } = await import('../../config/raid-config.js');
+        const isExalt = isExaltDungeon(dungeonKey);
+
         // If no user roles provided, check across ALL quota configs in the guild
         if (!userRoleIds || userRoleIds.length === 0) {
-            const res = await db.query<{ points: string }>(
+            // First try to find a dungeon-specific override
+            const overrideRes = await db.query<{ points: string }>(
                 `SELECT points
                  FROM quota_dungeon_override
                  WHERE guild_id = $1::bigint 
@@ -351,20 +355,38 @@ export class QuotaService {
                 [guildId, dungeonKey]
             );
 
-            if (res.rowCount && res.rowCount > 0) {
-                const points = Number(res.rows[0].points);
+            if (overrideRes.rowCount && overrideRes.rowCount > 0) {
+                const points = Number(overrideRes.rows[0].points);
                 logger.debug({ guildId, dungeonKey, points }, 
                     'Found max dungeon override (no role filter)');
                 return points;
             }
 
+            // No override found, check base points from quota_role_config
+            const basePointsField = isExalt ? 'base_exalt_points' : 'base_non_exalt_points';
+            const baseRes = await db.query<{ points: string }>(
+                `SELECT ${basePointsField} as points
+                 FROM quota_role_config
+                 WHERE guild_id = $1::bigint
+                 ORDER BY ${basePointsField} DESC
+                 LIMIT 1`,
+                [guildId]
+            );
+
+            if (baseRes.rowCount && baseRes.rowCount > 0) {
+                const points = Number(baseRes.rows[0].points);
+                logger.debug({ guildId, dungeonKey, isExalt, points }, 
+                    'Using max base points (no role filter)');
+                return points;
+            }
+
             logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 
-                'No dungeon override found, using default');
+                'No dungeon override or base points found, using default');
             return 1;
         }
 
         // Query all dungeon overrides for this dungeon across all the user's roles
-        const res = await db.query<{ points: string }>(
+        const overrideRes = await db.query<{ points: string }>(
             `SELECT points
              FROM quota_dungeon_override
              WHERE guild_id = $1::bigint 
@@ -376,16 +398,35 @@ export class QuotaService {
         );
 
         // If we found an override, use the highest value
-        if (res.rowCount && res.rowCount > 0) {
-            const points = Number(res.rows[0].points);
+        if (overrideRes.rowCount && overrideRes.rowCount > 0) {
+            const points = Number(overrideRes.rows[0].points);
             logger.debug({ guildId, dungeonKey, points, rolesChecked: userRoleIds.length }, 
                 'Found dungeon override');
             return points;
         }
 
-        // No override found, use default
+        // No override found, check base points for the user's roles
+        const basePointsField = isExalt ? 'base_exalt_points' : 'base_non_exalt_points';
+        const baseRes = await db.query<{ points: string }>(
+            `SELECT ${basePointsField} as points
+             FROM quota_role_config
+             WHERE guild_id = $1::bigint 
+               AND discord_role_id = ANY($2::bigint[])
+             ORDER BY ${basePointsField} DESC
+             LIMIT 1`,
+            [guildId, userRoleIds]
+        );
+
+        if (baseRes.rowCount && baseRes.rowCount > 0) {
+            const points = Number(baseRes.rows[0].points);
+            logger.debug({ guildId, dungeonKey, isExalt, points, rolesChecked: userRoleIds.length }, 
+                'Using base points');
+            return points;
+        }
+
+        // No override or base points found, use default
         logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 
-            'No dungeon override found, using default');
+            'No dungeon override or base points found, using default');
         return 1;
     }
 

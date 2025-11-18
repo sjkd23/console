@@ -3,6 +3,7 @@ import { Client, EmbedBuilder, type GuildTextBasedChannel, type TextChannel } fr
 import { getJSON, patchJSON, postJSON } from '../utilities/http.js';
 import { createLogger } from '../logging/logger.js';
 import { deleteRunRole } from '../utilities/run-role-manager.js';
+import { updateQuotaPanelsForUser } from '../ui/quota-panel.js';
 
 const logger = createLogger('ScheduledTasks');
 
@@ -102,6 +103,29 @@ async function checkExpiredRuns(client: Client): Promise<void> {
                 guildName: guild.name,
                 autoEndMinutes: run.auto_end_minutes
             });
+
+            // Auto-update quota panels for the organizer after run ends
+            // This awards quota points via the backend transaction and updates the panel
+            try {
+                await updateQuotaPanelsForUser(
+                    client,
+                    run.guild_id,
+                    run.organizer_id
+                );
+                logger.debug(`Updated quota panel after auto-end`, {
+                    runId: run.id,
+                    guildId: run.guild_id,
+                    organizerId: run.organizer_id
+                });
+            } catch (err) {
+                logger.warn(`Failed to update quota panel after auto-end`, {
+                    runId: run.id,
+                    guildId: run.guild_id,
+                    organizerId: run.organizer_id,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+                // Don't fail the auto-end if quota panel update fails
+            }
 
             // Delete the run role if it exists
             if (run.role_id) {

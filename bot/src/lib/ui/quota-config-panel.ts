@@ -18,13 +18,31 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
     config: any | null;
 }> {
     // Fetch current config from backend
-    let config: any = null;
+    let config: {
+        guild_id: string;
+        discord_role_id: string;
+        required_points: number;
+        reset_at: string;
+        panel_message_id: string | null;
+        moderation_points: number;
+        base_exalt_points?: number;
+        base_non_exalt_points?: number;
+    } | null = null;
     let dungeonOverrides: Record<string, number> = {};
     
     try {
         const result = await getQuotaRoleConfig(guildId, roleId);
         config = result.config;
         dungeonOverrides = result.dungeon_overrides;
+        
+        // Debug log to check if base points are being returned
+        if (config) {
+            console.log(`[QuotaConfigPanel] Config fetched for ${guildId}/${roleId}:`, {
+                base_exalt_points: config.base_exalt_points,
+                base_non_exalt_points: config.base_non_exalt_points,
+                moderation_points: config.moderation_points
+            });
+        }
     } catch (err) {
         if (err instanceof BackendError && err.status === 404) {
             // No config exists yet - that's okay, we'll create one
@@ -45,10 +63,16 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
         const resetDate = new Date(config.reset_at);
         const resetTimestamp = Math.floor(resetDate.getTime() / 1000);
         
+        // Use ?? instead of || to handle 0 values correctly
+        const baseExaltPoints = config.base_exalt_points ?? 1;
+        const baseNonExaltPoints = config.base_non_exalt_points ?? 1;
+        
         embed.addFields(
             { name: '🎯 Required Points', value: formatPoints(config.required_points), inline: true },
             { name: '📅 Resets', value: `<t:${resetTimestamp}:F>\n(<t:${resetTimestamp}:R>)`, inline: true },
-            { name: '✅ Moderation Points', value: formatPoints(config.moderation_points), inline: true }
+            { name: '✅ Moderation Points', value: formatPoints(config.moderation_points), inline: true },
+            { name: '⚔️ Base Exalt Points', value: formatPoints(baseExaltPoints), inline: true },
+            { name: '🗡️ Base Non-Exalt Points', value: formatPoints(baseNonExaltPoints), inline: true }
         );
 
         // Show dungeon overrides if any
@@ -87,6 +111,11 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
                 .setStyle(ButtonStyle.Primary)
                 .setEmoji('⚙️'),
             new ButtonBuilder()
+                .setCustomId(`quota_config_base_points:${roleId}${userIdSuffix}`)
+                .setLabel('Base Points')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('🎯'),
+            new ButtonBuilder()
                 .setCustomId(`quota_config_moderation:${roleId}${userIdSuffix}`)
                 .setLabel('Moderation Points')
                 .setStyle(ButtonStyle.Primary)
@@ -101,18 +130,18 @@ export async function buildQuotaConfigPanel(guildId: string, roleId: string, use
                 .setLabel('Update Panel')
                 .setStyle(ButtonStyle.Success)
                 .setEmoji('🔄')
-                .setDisabled(!config), // Only enable if config exists
+                .setDisabled(!config) // Only enable if config exists
+        );
+
+    // Second row with Reset Panel and Stop buttons
+    const buttons2 = new ActionRowBuilder<ButtonBuilder>()
+        .addComponents(
             new ButtonBuilder()
                 .setCustomId(`quota_reset_panel:${roleId}${userIdSuffix}`)
                 .setLabel('Reset Panel')
                 .setStyle(ButtonStyle.Danger)
                 .setEmoji('🔁')
-                .setDisabled(!config) // Only enable if config exists
-        );
-
-    // Second row with Stop button
-    const buttons2 = new ActionRowBuilder<ButtonBuilder>()
-        .addComponents(
+                .setDisabled(!config), // Only enable if config exists
             new ButtonBuilder()
                 .setCustomId(`quota_config_stop:${roleId}${userIdSuffix}`)
                 .setLabel('Stop')

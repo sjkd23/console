@@ -383,8 +383,176 @@ export async function handleQuotaModerationModal(interaction: ModalSubmitInterac
                 // Non-critical, continue
             }
         }
+
+        // Refresh the quota leaderboard panel to show updated Point Sources
+        try {
+            const updatedResult = await getQuotaRoleConfig(interaction.guildId!, roleId);
+            if (updatedResult.config) {
+                await updateQuotaPanel(interaction.client, interaction.guildId!, roleId, updatedResult.config);
+            }
+        } catch (err) {
+            console.error('Failed to refresh quota panel after moderation points update:', err);
+            // Non-critical, continue
+        }
     } catch (err) {
         console.error('Failed to update moderation points:', err);
+        const msg = err instanceof BackendError ? err.message : 'Unknown error';
+        await interaction.editReply(`❌ Failed to update configuration: ${msg}`);
+    }
+}
+
+/**
+ * Handle quota_config_base_points button
+ * Opens a modal to set base exalt and non-exalt dungeon points
+ */
+export async function handleQuotaConfigBasePoints(interaction: ButtonInteraction) {
+    const customIdParts = interaction.customId.split(':');
+    const roleId = customIdParts[1];
+    const authorizedUserId = customIdParts.length > 2 ? customIdParts[2] : null;
+
+    if (!roleId) {
+        await interaction.reply({ content: '❌ Invalid interaction data', flags: MessageFlags.Ephemeral });
+        return;
+    }
+
+    // Check if only the command user can interact (only if user ID is specified)
+    if (authorizedUserId && interaction.user.id !== authorizedUserId) {
+        await interaction.reply({ 
+            content: '❌ Only the user who ran the command can use these buttons.', 
+            flags: MessageFlags.Ephemeral 
+        });
+        return;
+    }
+
+    // Check permissions (required even if no specific user restriction)
+    const member = await interaction.guild?.members.fetch(interaction.user.id);
+    if (!member?.permissions.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({ content: '❌ Administrator permission required', flags: MessageFlags.Ephemeral });
+        return;
+    }
+
+    // Fetch current config to pre-fill
+    let config: any = null;
+    try {
+        const result = await getQuotaRoleConfig(interaction.guildId!, roleId);
+        config = result.config;
+    } catch { }
+
+    const modal = new ModalBuilder()
+        .setCustomId(`quota_base_points_modal:${roleId}:${interaction.message.id}`)
+        .setTitle('Configure Base Dungeon Points');
+
+    const baseExaltPointsInput = new TextInputBuilder()
+        .setCustomId('base_exalt_points')
+        .setLabel('Base Exalt Dungeon Points')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 2 or 1.5')
+        .setRequired(true)
+        .setValue(config?.base_exalt_points?.toFixed(2) || '1.00');
+
+    const baseNonExaltPointsInput = new TextInputBuilder()
+        .setCustomId('base_non_exalt_points')
+        .setLabel('Base Non-Exalt Dungeon Points')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('e.g., 1 or 0.5')
+        .setRequired(true)
+        .setValue(config?.base_non_exalt_points?.toFixed(2) || '1.00');
+
+    modal.addComponents(
+        new ActionRowBuilder<TextInputBuilder>().addComponents(baseExaltPointsInput),
+        new ActionRowBuilder<TextInputBuilder>().addComponents(baseNonExaltPointsInput)
+    );
+
+    await interaction.showModal(modal);
+}
+
+/**
+ * Handle quota_base_points_modal submission
+ */
+export async function handleQuotaBasePointsModal(interaction: ModalSubmitInteraction) {
+    const parts = interaction.customId.split(':');
+    const roleId = parts[1];
+    const mainPanelMessageId = parts[2];
+    
+    if (!roleId) {
+        await interaction.reply({ content: '❌ Invalid interaction data', flags: MessageFlags.Ephemeral });
+        return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    // Parse inputs
+    const baseExaltPoints = parseFloat(interaction.fields.getTextInputValue('base_exalt_points'));
+    const baseNonExaltPoints = parseFloat(interaction.fields.getTextInputValue('base_non_exalt_points'));
+
+    // Validate both fields
+    if (isNaN(baseExaltPoints) || baseExaltPoints < 0) {
+        await interaction.editReply('❌ Base exalt points must be a non-negative number.');
+        return;
+    }
+
+    if (isNaN(baseNonExaltPoints) || baseNonExaltPoints < 0) {
+        await interaction.editReply('❌ Base non-exalt points must be a non-negative number.');
+        return;
+    }
+
+    // Check decimal places (max 2)
+    if (Math.round(baseExaltPoints * 100) !== baseExaltPoints * 100) {
+        await interaction.editReply('❌ Base exalt points can have at most 2 decimal places (e.g., 1.50).');
+        return;
+    }
+
+    if (Math.round(baseNonExaltPoints * 100) !== baseNonExaltPoints * 100) {
+        await interaction.editReply('❌ Base non-exalt points can have at most 2 decimal places (e.g., 1.50).');
+        return;
+    }
+
+    // Check permissions
+    const member = await interaction.guild?.members.fetch(interaction.user.id);
+    const hasAdminPerm = member?.permissions.has(PermissionFlagsBits.Administrator);
+
+    try {
+        await updateQuotaRoleConfig(interaction.guildId!, roleId, {
+            actor_user_id: interaction.user.id,
+            actor_has_admin_permission: hasAdminPerm,
+            base_exalt_points: baseExaltPoints,
+            base_non_exalt_points: baseNonExaltPoints,
+        });
+
+        await interaction.editReply(
+            `✅ **Base dungeon points updated!**\n\n` +
+            `**Exalt Dungeons:** ${formatPoints(baseExaltPoints)} point${baseExaltPoints === 1 ? '' : 's'}\n` +
+            `**Non-Exalt Dungeons:** ${formatPoints(baseNonExaltPoints)} point${baseNonExaltPoints === 1 ? '' : 's'}\n\n` +
+            `Note: You can still override specific dungeons using the "Configure Dungeons" button.`
+        );
+
+        // Refresh the original /configquota panel using webhook
+        if (mainPanelMessageId) {
+            try {
+                const { embed: mainEmbed, buttons: mainButtons } = await buildQuotaConfigPanel(interaction.guildId!, roleId);
+                
+                await interaction.webhook.editMessage(mainPanelMessageId, {
+                    embeds: [mainEmbed],
+                    components: mainButtons,
+                });
+            } catch (err) {
+                console.error('Failed to refresh main quota config panel:', err);
+                // Non-critical, continue
+            }
+        }
+
+        // Refresh the quota leaderboard panel to show updated Point Sources
+        try {
+            const updatedResult = await getQuotaRoleConfig(interaction.guildId!, roleId);
+            if (updatedResult.config) {
+                await updateQuotaPanel(interaction.client, interaction.guildId!, roleId, updatedResult.config);
+            }
+        } catch (err) {
+            console.error('Failed to refresh quota panel after base points update:', err);
+            // Non-critical, continue
+        }
+    } catch (err) {
+        console.error('Failed to update base points:', err);
         const msg = err instanceof BackendError ? err.message : 'Unknown error';
         await interaction.editReply(`❌ Failed to update configuration: ${msg}`);
     }
@@ -592,6 +760,17 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
                 console.error('Failed to refresh main quota config panel:', err);
                 // Non-critical, continue
             }
+        }
+
+        // Refresh the quota leaderboard panel to show updated Point Sources
+        try {
+            const updatedResult = await getQuotaRoleConfig(interaction.guildId!, roleId);
+            if (updatedResult.config) {
+                await updateQuotaPanel(interaction.client, interaction.guildId!, roleId, updatedResult.config);
+            }
+        } catch (err) {
+            console.error('Failed to refresh quota panel after dungeon override update:', err);
+            // Non-critical, continue
         }
     } catch (err) {
         console.error('Failed to update dungeon override:', err);

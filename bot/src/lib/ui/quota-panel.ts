@@ -4,7 +4,7 @@ import {
     TextChannel,
     Message,
 } from 'discord.js';
-import { getQuotaLeaderboard, getGuildChannels, updateQuotaRoleConfig, getJSON } from '../utilities/http.js';
+import { getQuotaLeaderboard, getGuildChannels, updateQuotaRoleConfig, getJSON, getQuotaRoleConfig } from '../utilities/http.js';
 import { createLogger } from '../logging/logger.js';
 import { formatPoints } from '../utilities/format-helpers.js';
 
@@ -54,13 +54,23 @@ export async function updateQuotaPanel(
             return;
         }
 
-        // Always fetch all guild members to ensure role.members is fully populated
-        // This is necessary because Discord.js only caches members it has seen
-        logger.debug('Fetching all guild members to populate role cache', { guildId, roleId });
+        // Fetch guild members to ensure role.members is populated
+        // Use a timeout to prevent hanging on large servers
+        logger.debug('Fetching guild members to populate role cache', { guildId, roleId });
         try {
-            await guild.members.fetch({ time: 30000 }); // 30 second timeout
+            // Race between fetching members and a 10-second timeout
+            await Promise.race([
+                guild.members.fetch(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 10000))
+            ]);
+            logger.debug('Successfully fetched all guild members', { guildId, roleId });
         } catch (err) {
-            logger.warn('Failed to fetch all members, using cached members', { guildId, roleId, err: String(err) });
+            logger.warn('Failed to fetch all members within timeout, using cached members', { 
+                guildId, 
+                roleId, 
+                cachedCount: role.members.size,
+                err: String(err) 
+            });
         }
         
         const memberIds = role.members.map(m => m.id);
@@ -70,14 +80,26 @@ export async function updateQuotaPanel(
         const result = await getQuotaLeaderboard(guildId, roleId, memberIds);
         logger.debug('Received leaderboard data', { guildId, roleId, entryCount: result.leaderboard.length });
         
-        // Build embed
+        // Get quota config for base points and dungeon overrides
+        const configResult = await getQuotaRoleConfig(guildId, roleId);
+        
+        // If config is null, use defaults
+        const quotaConfig = configResult.config || {
+            base_exalt_points: 1,
+            base_non_exalt_points: 1,
+            moderation_points: 0
+        };
+        
+        // Build embed with config data
         const embed = buildLeaderboardEmbed(
             role.name,
             result.config.required_points,
             result.period_start,
             result.period_end,
             result.leaderboard,
-            guild
+            guild,
+            quotaConfig,
+            configResult.dungeon_overrides
         );
 
         // Update or create message
@@ -133,19 +155,56 @@ function buildLeaderboardEmbed(
     periodStart: string,
     periodEnd: string,
     leaderboard: Array<{ user_id: string; points: number; runs: number }>,
-    guild: any
+    guild: any,
+    config: {
+        base_exalt_points: number;
+        base_non_exalt_points: number;
+        moderation_points: number;
+    },
+    dungeonOverrides: Record<string, number>
 ): EmbedBuilder {
     const periodEndDate = new Date(periodEnd);
     const periodStartDate = new Date(periodStart);
     const startTimestamp = Math.floor(periodStartDate.getTime() / 1000);
     const endTimestamp = Math.floor(periodEndDate.getTime() / 1000);
 
+    // Build point sources section
+    const pointSources: string[] = [];
+    
+    // Add base points if they're not 0
+    if (config.base_exalt_points > 0) {
+        pointSources.push(`**Exalt Dungeons:** ${formatPoints(config.base_exalt_points)} pts/run`);
+    }
+    if (config.base_non_exalt_points > 0) {
+        pointSources.push(`**Non-Exalt Dungeons:** ${formatPoints(config.base_non_exalt_points)} pts/run`);
+    }
+    
+    // Add moderation points if not 0
+    if (config.moderation_points > 0) {
+        pointSources.push(`**Verifications:** ${formatPoints(config.moderation_points)} pts each`);
+    }
+    
+    // Add dungeon overrides (sorted by points descending)
+    const overridesList = Object.entries(dungeonOverrides)
+        .filter(([, pts]) => pts > 0)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10) // Show top 10 overrides
+        .map(([dungeon, pts]) => `${dungeon}: ${formatPoints(pts)} pts`);
+    
+    if (overridesList.length > 0) {
+        pointSources.push(`**Dungeon Overrides:** ${overridesList.join(', ')}`);
+        if (Object.keys(dungeonOverrides).length > 10) {
+            pointSources.push(`_...and ${Object.keys(dungeonOverrides).length - 10} more_`);
+        }
+    }
+
     const embed = new EmbedBuilder()
         .setTitle(`📊 ${roleName} Quota Leaderboard`)
         .setDescription(
             `**Required Points:** ${formatPoints(requiredPoints)}\n` +
             `**Start:** <t:${startTimestamp}:f>\n` +
-            `**End:** <t:${endTimestamp}:f> (<t:${endTimestamp}:R>)`
+            `**End:** <t:${endTimestamp}:f> (<t:${endTimestamp}:R>)` +
+            (pointSources.length > 0 ? `\n\n__**Point Sources:**__\n${pointSources.join('\n')}` : '')
         )
         .setColor(0x5865F2)
         .setTimestamp();

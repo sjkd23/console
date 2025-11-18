@@ -9,6 +9,7 @@ import { sendRunPing } from '../../../lib/utilities/run-ping.js';
 import { withButtonLock, getRunLockKey } from '../../../lib/utilities/button-mutex.js';
 import { createLogger } from '../../../lib/logging/logger.js';
 import { clearRunReactions } from '../../../lib/utilities/run-reactions.js';
+import { updateQuotaPanelsForUser } from '../../../lib/ui/quota-panel.js';
 
 const logger = createLogger('RunStatus');
 
@@ -98,6 +99,36 @@ async function handleStatusInternal(
                 actorRoles: getMemberRoleIds(member),
                 status
             }, { guildId });
+        }
+
+        // Auto-update quota panels for the organizer after run ends
+        // This awards quota points via the backend transaction and updates the panel
+        if (status === 'ended') {
+            logger.debug('Triggering quota panel update for organizer after run end', {
+                runId,
+                guildId,
+                organizerId: run.organizerId
+            });
+            
+            // Run asynchronously to not block the response
+            updateQuotaPanelsForUser(
+                btn.client,
+                guildId,
+                run.organizerId
+            ).then(() => {
+                logger.debug('Successfully updated quota panel after run end', {
+                    runId,
+                    guildId,
+                    organizerId: run.organizerId
+                });
+            }).catch(err => {
+                logger.error('Failed to auto-update quota panel after run end', {
+                    runId,
+                    guildId,
+                    organizerId: run.organizerId,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+            });
         }
     } catch (err) {
         if (err instanceof BackendError) {

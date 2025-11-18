@@ -161,3 +161,10 @@ export function getDungeonByCode(code: string): DungeonConfig | undefined {
 export function getDungeonName(code: string): string {
     return DUNGEON_BY_CODE.get(code)?.name ?? code;
 }
+
+/**
+ * Check if a dungeon is an Exaltation dungeon.
+ */
+export function isExaltDungeon(code: string): boolean {
+    return DUNGEON_BY_CODE.get(code)?.category === 'Exaltation Dungeons';
+}

@@ -238,7 +238,13 @@ export const runCreate: SlashCommand = {
                 });
             }
 
+            // Reply immediately with the run link (before reactions are added)
+            await interaction.editReply(
+                `Run created${sent ? ` and posted: ${sent.url}` : ''}`
+            );
+
             // Add reactions to the run message based on dungeon configuration
+            // This happens AFTER the user gets their response, so it doesn't delay the feedback
             try {
                 await addRunReactions(sent, d.codeName);
             } catch (e) {
@@ -278,10 +284,6 @@ export const runCreate: SlashCommand = {
                     error: e instanceof Error ? e.message : String(e)
                 });
             }
-
-            await interaction.editReply(
-                `Run created${sent ? ` and posted: ${sent.url}` : ''}`
-            );
         } catch (err) {
             const errorMessage = formatErrorMessage({
                 error: err,

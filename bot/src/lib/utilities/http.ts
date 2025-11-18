@@ -630,6 +630,9 @@ export async function getQuotaRoleConfig(
         required_points: number;
         reset_at: string;
         panel_message_id: string | null;
+        moderation_points: number;
+        base_exalt_points: number;
+        base_non_exalt_points: number;
     } | null;
     dungeon_overrides: Record<string, number>;
 }> {
@@ -649,6 +652,8 @@ export async function updateQuotaRoleConfig(
         created_at?: string;
         panel_message_id?: string | null;
         moderation_points?: number;
+        base_exalt_points?: number;
+        base_non_exalt_points?: number;
     }
 ): Promise<{
     config: {
@@ -658,6 +663,8 @@ export async function updateQuotaRoleConfig(
         reset_at: string;
         panel_message_id: string | null;
         moderation_points: number;
+        base_exalt_points: number;
+        base_non_exalt_points: number;
     };
     dungeon_overrides: Record<string, number>;
 }> {

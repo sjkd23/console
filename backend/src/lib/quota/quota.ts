@@ -36,6 +36,8 @@ export interface QuotaRoleConfig {
     panel_message_id: string | null;
     created_at: string; // ISO timestamp - when this config was created
     moderation_points: number; // Points awarded for verification activities
+    base_exalt_points: number; // Base points for exaltation dungeons (default: 1.0)
+    base_non_exalt_points: number; // Base points for non-exaltation dungeons (default: 1.0)
 }
 
 /**
@@ -61,8 +63,10 @@ export async function getQuotaRoleConfig(
         panel_message_id: string | null;
         created_at: string;
         moderation_points: string; // DECIMAL comes as string from pg
+        base_exalt_points: string; // DECIMAL comes as string from pg
+        base_non_exalt_points: string; // DECIMAL comes as string from pg
     }>(
-        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points
+        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points
          FROM quota_role_config
          WHERE guild_id = $1::bigint AND discord_role_id = $2::bigint`,
         [guildId, discordRoleId]
@@ -79,6 +83,8 @@ export async function getQuotaRoleConfig(
         panel_message_id: row.panel_message_id,
         created_at: row.created_at,
         moderation_points: Number(row.moderation_points),
+        base_exalt_points: Number(row.base_exalt_points),
+        base_non_exalt_points: Number(row.base_non_exalt_points),
     };
 }
 
@@ -96,8 +102,10 @@ export async function getAllQuotaRoleConfigs(
         panel_message_id: string | null;
         created_at: string;
         moderation_points: string; // DECIMAL comes as string from pg
+        base_exalt_points: string; // DECIMAL comes as string from pg
+        base_non_exalt_points: string; // DECIMAL comes as string from pg
     }>(
-        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points
+        `SELECT guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points
          FROM quota_role_config
          WHERE guild_id = $1::bigint
          ORDER BY discord_role_id`,
@@ -112,6 +120,8 @@ export async function getAllQuotaRoleConfigs(
         panel_message_id: row.panel_message_id,
         created_at: row.created_at,
         moderation_points: Number(row.moderation_points),
+        base_exalt_points: Number(row.base_exalt_points),
+        base_non_exalt_points: Number(row.base_non_exalt_points),
     }));
 }
 
@@ -127,6 +137,8 @@ export async function upsertQuotaRoleConfig(
         panel_message_id?: string | null;
         created_at?: string; // ISO timestamp - for resetting quota periods
         moderation_points?: number; // Points awarded for verification activities
+        base_exalt_points?: number; // Base points for exaltation dungeons
+        base_non_exalt_points?: number; // Base points for non-exaltation dungeons
     }
 ): Promise<QuotaRoleConfig> {
     const fields: string[] = [];
@@ -138,11 +150,15 @@ export async function upsertQuotaRoleConfig(
     const resetAt = config.reset_at ?? null; // Will use COALESCE in query
     const createdAt = config.created_at ?? null; // Will use COALESCE in query
     const moderationPoints = config.moderation_points ?? 0;
+    const baseExaltPoints = config.base_exalt_points ?? 1.0;
+    const baseNonExaltPoints = config.base_non_exalt_points ?? 1.0;
 
     values.push(requiredPoints); // $3
     values.push(resetAt); // $4
     values.push(createdAt); // $5
     values.push(moderationPoints); // $6
+    values.push(baseExaltPoints); // $7
+    values.push(baseNonExaltPoints); // $8
 
     // Build UPDATE fields
     if (config.required_points !== undefined) {
@@ -164,6 +180,16 @@ export async function upsertQuotaRoleConfig(
         fields.push(`moderation_points = $${idx}`);
     }
     idx++; // Move past $6
+
+    if (config.base_exalt_points !== undefined) {
+        fields.push(`base_exalt_points = $${idx}`);
+    }
+    idx++; // Move past $7
+
+    if (config.base_non_exalt_points !== undefined) {
+        fields.push(`base_non_exalt_points = $${idx}`);
+    }
+    idx++; // Move past $8
 
     if (config.panel_message_id !== undefined) {
         fields.push(`panel_message_id = $${idx++}::bigint`);
@@ -190,17 +216,21 @@ export async function upsertQuotaRoleConfig(
         panel_message_id: string | null;
         created_at: string;
         moderation_points: string; // DECIMAL comes as string from pg
+        base_exalt_points: string; // DECIMAL comes as string from pg
+        base_non_exalt_points: string; // DECIMAL comes as string from pg
     }>(
-        `INSERT INTO quota_role_config (guild_id, discord_role_id, required_points, reset_at, created_at, moderation_points, updated_at)
+        `INSERT INTO quota_role_config (guild_id, discord_role_id, required_points, reset_at, created_at, moderation_points, base_exalt_points, base_non_exalt_points, updated_at)
          VALUES ($1::bigint, $2::bigint, 
                  $3, 
                  COALESCE($4::timestamptz, NOW() + INTERVAL '7 days'),
                  COALESCE($5::timestamptz, NOW()),
                  $6,
+                 $7,
+                 $8,
                  NOW())
          ON CONFLICT (guild_id, discord_role_id)
          DO UPDATE SET updated_at = NOW() ${updateClause}
-         RETURNING guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points`,
+         RETURNING guild_id, discord_role_id, required_points, reset_at, panel_message_id, created_at, moderation_points, base_exalt_points, base_non_exalt_points`,
         values
     );
 
@@ -213,6 +243,8 @@ export async function upsertQuotaRoleConfig(
         panel_message_id: row.panel_message_id,
         created_at: row.created_at,
         moderation_points: Number(row.moderation_points),
+        base_exalt_points: Number(row.base_exalt_points),
+        base_non_exalt_points: Number(row.base_non_exalt_points),
     };
 }
 
@@ -240,22 +272,26 @@ export async function getDungeonOverrides(
 /**
  * Get the point value for a specific dungeon considering all of the user's roles.
  * Returns the HIGHEST point value found across all the user's roles that have quota configs.
- * If no override exists for any role, returns the default of 1 point.
+ * Priority: dungeon override > base exalt/non-exalt points > default 1
  * 
  * @param guildId - Discord guild ID
  * @param dungeonKey - Dungeon identifier (e.g., 'shatters', 'fungal')
  * @param userRoleIds - Array of Discord role IDs the user has (optional)
- * @returns The point value for this dungeon (highest override or default 1)
+ * @returns The point value for this dungeon (highest override or base value)
  */
 export async function getPointsForDungeon(
     guildId: string,
     dungeonKey: string,
     userRoleIds?: string[]
 ): Promise<number> {
+    const { isExaltDungeon } = await import('../../config/raid-config.js');
+    const isExalt = isExaltDungeon(dungeonKey);
+
     // If no user roles provided, check across ALL quota configs in the guild
     // This is useful for auto-end scenarios where we don't have the organizer's current roles
     if (!userRoleIds || userRoleIds.length === 0) {
-        const res = await query<{ points: string }>(
+        // First try to find a dungeon-specific override
+        const overrideRes = await query<{ points: string }>(
             `SELECT points
              FROM quota_dungeon_override
              WHERE guild_id = $1::bigint 
@@ -265,18 +301,35 @@ export async function getPointsForDungeon(
             [guildId, dungeonKey]
         );
 
-        if (res.rowCount && res.rowCount > 0) {
-            const points = Number(res.rows[0].points);
+        if (overrideRes.rowCount && overrideRes.rowCount > 0) {
+            const points = Number(overrideRes.rows[0].points);
             logger.debug({ guildId, dungeonKey, points }, 'Found max dungeon override (no role filter)');
             return points;
         }
 
-        logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 'No dungeon override found, using default');
+        // No override found, check base points from quota_role_config
+        const basePointsField = isExalt ? 'base_exalt_points' : 'base_non_exalt_points';
+        const baseRes = await query<{ points: string }>(
+            `SELECT ${basePointsField} as points
+             FROM quota_role_config
+             WHERE guild_id = $1::bigint
+             ORDER BY ${basePointsField} DESC
+             LIMIT 1`,
+            [guildId]
+        );
+
+        if (baseRes.rowCount && baseRes.rowCount > 0) {
+            const points = Number(baseRes.rows[0].points);
+            logger.debug({ guildId, dungeonKey, isExalt, points }, 'Using max base points (no role filter)');
+            return points;
+        }
+
+        logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 'No dungeon override or base points found, using default');
         return 1;
     }
 
     // Query all dungeon overrides for this dungeon across all the user's roles
-    const res = await query<{ points: string }>(
+    const overrideRes = await query<{ points: string }>(
         `SELECT points
          FROM quota_dungeon_override
          WHERE guild_id = $1::bigint 
@@ -288,14 +341,32 @@ export async function getPointsForDungeon(
     );
 
     // If we found an override, use the highest value
-    if (res.rowCount && res.rowCount > 0) {
-        const points = Number(res.rows[0].points);
+    if (overrideRes.rowCount && overrideRes.rowCount > 0) {
+        const points = Number(overrideRes.rows[0].points);
         logger.debug({ guildId, dungeonKey, points, rolesChecked: userRoleIds.length }, 'Found dungeon override');
         return points;
     }
 
-    // No override found, use default
-    logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 'No dungeon override found, using default');
+    // No override found, check base points for the user's roles
+    const basePointsField = isExalt ? 'base_exalt_points' : 'base_non_exalt_points';
+    const baseRes = await query<{ points: string }>(
+        `SELECT ${basePointsField} as points
+         FROM quota_role_config
+         WHERE guild_id = $1::bigint 
+           AND discord_role_id = ANY($2::bigint[])
+         ORDER BY ${basePointsField} DESC
+         LIMIT 1`,
+        [guildId, userRoleIds]
+    );
+
+    if (baseRes.rowCount && baseRes.rowCount > 0) {
+        const points = Number(baseRes.rows[0].points);
+        logger.debug({ guildId, dungeonKey, isExalt, points, rolesChecked: userRoleIds.length }, 'Using base points');
+        return points;
+    }
+
+    // No override or base points found, use default
+    logger.debug({ guildId, dungeonKey, defaultPoints: 1 }, 'No dungeon override or base points found, using default');
     return 1;
 }
 
@@ -717,8 +788,18 @@ export async function getUserQuotaStats(
     );
 
     // Get run count (organizer activities - where they earned quota_points)
+    // For manual logs, parse the run count from subject_id
     const runsRes = await query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
+        `SELECT COALESCE(
+            SUM(
+                CASE 
+                    WHEN subject_id LIKE 'manual_log_run:%' 
+                    THEN (split_part(subject_id, ':', 4)::int)
+                    ELSE 1
+                END
+            ), 
+            0
+        )::text AS count
          FROM quota_event
          WHERE guild_id = $1::bigint 
            AND actor_user_id = $2::bigint
@@ -746,11 +827,34 @@ export async function getUserQuotaStats(
     );
 
     // Get per-dungeon breakdown showing completed, organized, and keys popped
+    // For manual logs, parse the run count from subject_id
     const dungeonsRes = await query<{ dungeon_key: string; completed: string; organized: string; keys_popped: string }>(
         `SELECT 
             COALESCE(qe.dungeon_key, kp.dungeon_key) AS dungeon_key,
-            COALESCE(COUNT(*) FILTER (WHERE qe.points > 0), 0)::text AS completed,
-            COALESCE(COUNT(*) FILTER (WHERE qe.quota_points > 0), 0)::text AS organized,
+            COALESCE(
+                SUM(
+                    CASE 
+                        WHEN qe.points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(qe.subject_id, ':', 4)::int)
+                        WHEN qe.points > 0 
+                        THEN 1
+                        ELSE 0
+                    END
+                ), 
+                0
+            )::text AS completed,
+            COALESCE(
+                SUM(
+                    CASE 
+                        WHEN qe.quota_points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(qe.subject_id, ':', 4)::int)
+                        WHEN qe.quota_points > 0 
+                        THEN 1
+                        ELSE 0
+                    END
+                ), 
+                0
+            )::text AS organized,
             COALESCE(MAX(kp.count), 0)::text AS keys_popped
          FROM quota_event qe
          FULL OUTER JOIN (
@@ -762,10 +866,58 @@ export async function getUserQuotaStats(
          WHERE (qe.guild_id = $1::bigint AND qe.actor_user_id = $2::bigint AND qe.action_type = 'run_completed')
             OR kp.dungeon_key IS NOT NULL
          GROUP BY COALESCE(qe.dungeon_key, kp.dungeon_key)
-         HAVING COUNT(*) FILTER (WHERE qe.points > 0) > 0 
-             OR COUNT(*) FILTER (WHERE qe.quota_points > 0) > 0
+         HAVING COALESCE(
+                    SUM(
+                        CASE 
+                            WHEN qe.points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(qe.subject_id, ':', 4)::int)
+                            WHEN qe.points > 0 
+                            THEN 1
+                            ELSE 0
+                        END
+                    ), 
+                    0
+                ) > 0 
+             OR COALESCE(
+                    SUM(
+                        CASE 
+                            WHEN qe.quota_points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(qe.subject_id, ':', 4)::int)
+                            WHEN qe.quota_points > 0 
+                            THEN 1
+                            ELSE 0
+                        END
+                    ), 
+                    0
+                ) > 0
              OR COALESCE(MAX(kp.count), 0) > 0
-         ORDER BY (COALESCE(COUNT(*) FILTER (WHERE qe.points > 0), 0) + COALESCE(COUNT(*) FILTER (WHERE qe.quota_points > 0), 0) + COALESCE(MAX(kp.count), 0)) DESC`,
+         ORDER BY (
+            COALESCE(
+                SUM(
+                    CASE 
+                        WHEN qe.points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(qe.subject_id, ':', 4)::int)
+                        WHEN qe.points > 0 
+                        THEN 1
+                        ELSE 0
+                    END
+                ), 
+                0
+            ) + 
+            COALESCE(
+                SUM(
+                    CASE 
+                        WHEN qe.quota_points > 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(qe.subject_id, ':', 4)::int)
+                        WHEN qe.quota_points > 0 
+                        THEN 1
+                        ELSE 0
+                    END
+                ), 
+                0
+            ) + 
+            COALESCE(MAX(kp.count), 0)
+         ) DESC`,
         [guildId, userId]
     );
 
@@ -809,10 +961,23 @@ export async function getQuotaLeaderboard(
 
     // Use UNNEST to include all members, even those with 0 points
     // This ensures the leaderboard shows everyone with the role, not just those with activity
+    // For manual logs (subject_id like 'manual_log_run:timestamp:userid:count'), extract the run count from subject_id
+    // For regular run logs (subject_id like 'run:123'), count as 1 run each
     const res = await query<{ actor_user_id: string; total_points: string; run_count: string }>(
         `SELECT members.user_id::text AS actor_user_id,
                 COALESCE(SUM(qe.quota_points), 0)::text AS total_points,
-                COALESCE(COUNT(qe.id) FILTER (WHERE qe.action_type = 'run_completed'), 0)::text AS run_count
+                COALESCE(
+                    SUM(
+                        CASE 
+                            WHEN qe.action_type = 'run_completed' AND qe.subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(qe.subject_id, ':', 4)::int)
+                            WHEN qe.action_type = 'run_completed' 
+                            THEN 1
+                            ELSE 0
+                        END
+                    ), 
+                    0
+                )::text AS run_count
          FROM UNNEST($2::bigint[]) AS members(user_id)
          LEFT JOIN quota_event qe ON qe.guild_id = $1::bigint 
                                   AND qe.actor_user_id = members.user_id
@@ -820,7 +985,18 @@ export async function getQuotaLeaderboard(
                                   AND qe.created_at < $4
          GROUP BY members.user_id
          ORDER BY COALESCE(SUM(qe.quota_points), 0) DESC, 
-                  COALESCE(COUNT(qe.id) FILTER (WHERE qe.action_type = 'run_completed'), 0) DESC
+                  COALESCE(
+                      SUM(
+                          CASE 
+                              WHEN qe.action_type = 'run_completed' AND qe.subject_id LIKE 'manual_log_run:%' 
+                              THEN (split_part(qe.subject_id, ':', 4)::int)
+                              WHEN qe.action_type = 'run_completed' 
+                              THEN 1
+                              ELSE 0
+                          END
+                      ), 
+                      0
+                  ) DESC
          LIMIT 50`,
         [guildId, memberUserIds, periodStart.toISOString(), periodEnd.toISOString()]
     );
@@ -851,7 +1027,18 @@ export async function getQuotaStatsForRole(
     const res = await query<{ actor_user_id: string; total_points: string; run_count: string }>(
         `SELECT actor_user_id, 
                 COALESCE(SUM(quota_points), 0)::text AS total_points,
-                COUNT(CASE WHEN action_type = 'run_completed' THEN 1 END)::text AS run_count
+                COALESCE(
+                    SUM(
+                        CASE 
+                            WHEN action_type = 'run_completed' AND subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(subject_id, ':', 4)::int)
+                            WHEN action_type = 'run_completed' 
+                            THEN 1
+                            ELSE 0
+                        END
+                    ), 
+                    0
+                )::text AS run_count
          FROM quota_event
          WHERE guild_id = $1::bigint 
            AND actor_user_id = ANY($2::bigint[])

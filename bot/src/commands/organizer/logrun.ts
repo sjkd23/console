@@ -66,12 +66,11 @@ export const logrun: SlashCommand = {
 
         // Get options
         const dungeonCode = interaction.options.getString('dungeon', true);
-        let amount = interaction.options.getInteger('amount') ?? 1;
+        const amount = interaction.options.getInteger('amount') ?? 1;
         const targetUser = interaction.options.getUser('member') ?? interaction.user;
 
-        // Validate and cap amount
-        const cappedAmount = validateAndCapAmount(amount, CAPS.RUN_KEY);
-        if (cappedAmount === null) {
+        // Validate amount - reject if zero or exceeds max
+        if (amount === 0) {
             await interaction.reply({
                 content: '❌ Amount cannot be zero.',
                 flags: MessageFlags.Ephemeral,
@@ -79,9 +78,13 @@ export const logrun: SlashCommand = {
             return;
         }
 
-        // Notify user if amount was capped
-        const wasCapped = cappedAmount !== amount;
-        amount = cappedAmount;
+        if (Math.abs(amount) > CAPS.RUN_KEY) {
+            await interaction.reply({
+                content: `❌ Amount cannot exceed ${CAPS.RUN_KEY}. You entered ${Math.abs(amount)}.`,
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
+        }
 
         // Validate dungeon
         const dungeon = dungeonByCode[dungeonCode];
@@ -144,11 +147,6 @@ export const logrun: SlashCommand = {
                     { name: `${actionText} By`, value: `<@${interaction.user.id}>`, inline: true },
                 )
                 .setTimestamp();
-
-            // Add warning footer if amount was capped
-            if (wasCapped) {
-                embed.setFooter({ text: `⚠️ Amount was capped at ${CAPS.RUN_KEY} (max allowed)` });
-            }
 
             await interaction.editReply({
                 embeds: [embed],

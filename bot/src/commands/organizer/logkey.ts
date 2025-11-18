@@ -65,11 +65,10 @@ export const logkey: SlashCommand = {
         // Get options
         const targetUser = interaction.options.getUser('member', true);
         const dungeonCode = interaction.options.getString('dungeon', true);
-        let amount = interaction.options.getInteger('amount') ?? 1;
+        const amount = interaction.options.getInteger('amount') ?? 1;
 
-        // Validate and cap amount
-        const cappedAmount = validateAndCapAmount(amount, CAPS.RUN_KEY);
-        if (cappedAmount === null) {
+        // Validate amount - reject if zero or exceeds max
+        if (amount === 0) {
             await interaction.reply({
                 content: '❌ Amount cannot be zero.',
                 flags: MessageFlags.Ephemeral,
@@ -77,9 +76,13 @@ export const logkey: SlashCommand = {
             return;
         }
 
-        // Notify user if amount was capped
-        const wasCapped = cappedAmount !== amount;
-        amount = cappedAmount;
+        if (Math.abs(amount) > CAPS.RUN_KEY) {
+            await interaction.reply({
+                content: `❌ Amount cannot exceed ${CAPS.RUN_KEY}. You entered ${Math.abs(amount)}.`,
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
+        }
 
         // Validate dungeon
         const dungeon = dungeonByCode[dungeonCode];
@@ -143,17 +146,6 @@ export const logkey: SlashCommand = {
             }
 
             embed.setTimestamp();
-
-            if (Math.abs(amount) > 1 || wasCapped) {
-                let footerText = '';
-                if (Math.abs(amount) > 1) {
-                    footerText = `${actionText} ${Math.abs(amount)} key(s) for ${dungeon.dungeonName}`;
-                }
-                if (wasCapped) {
-                    footerText += footerText ? ` | ⚠️ Amount was capped at ${CAPS.RUN_KEY}` : `⚠️ Amount was capped at ${CAPS.RUN_KEY} (max allowed)`;
-                }
-                embed.setFooter({ text: footerText });
-            }
 
             await interaction.editReply({
                 embeds: [embed],

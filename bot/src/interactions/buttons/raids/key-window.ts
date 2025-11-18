@@ -4,6 +4,10 @@ import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js'
 import { logKeyWindow } from '../../../lib/logging/raid-logger.js';
 import { sendKeyPoppedPing } from '../../../lib/utilities/run-ping.js';
 import { getDefaultKeyWindowSeconds } from '../../../config/raid-config.js';
+import { updateQuotaPanelsForUser } from '../../../lib/ui/quota-panel.js';
+import { createLogger } from '../../../lib/logging/logger.js';
+
+const logger = createLogger('KeyWindow');
 
 /**
  * Handle "Key popped" button press.
@@ -100,6 +104,36 @@ export async function handleKeyWindow(btn: ButtonInteraction, runId: string) {
                 console.error('Failed to log key window to raid-log:', e);
             }
         }
+
+        // Auto-update quota panels for the organizer after key pop
+        // Key pops award organizer quota points (one per key pop)
+        logger.debug('Triggering quota panel update for organizer after key pop', {
+            runId,
+            guildId,
+            organizerId: run.organizerId,
+            keyPopCount: run.keyPopCount
+        });
+        
+        // Run asynchronously to not block the response
+        updateQuotaPanelsForUser(
+            btn.client,
+            guildId,
+            run.organizerId
+        ).then(() => {
+            logger.debug('Successfully updated quota panel after key pop', {
+                runId,
+                guildId,
+                organizerId: run.organizerId,
+                keyPopCount: run.keyPopCount
+            });
+        }).catch(err => {
+            logger.error('Failed to auto-update quota panel after key pop', {
+                runId,
+                guildId,
+                organizerId: run.organizerId,
+                error: err instanceof Error ? err.message : String(err)
+            });
+        });
 
         // Confirm to organizer
         await btn.editReply({ content: `${keyEmoji} Key popped! Party join window started.` });

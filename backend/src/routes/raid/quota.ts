@@ -387,7 +387,7 @@ export default async function quotaRoutes(app: FastifyInstance) {
     /**
      * PUT /quota/config/:guild_id/:role_id
      * Update quota configuration for a specific role
-     * Body: { actor_user_id, actor_roles?, actor_has_admin_permission?, required_points?, reset_at?, moderation_points? }
+     * Body: { actor_user_id, actor_roles?, actor_has_admin_permission?, required_points?, reset_at?, moderation_points?, base_exalt_points?, base_non_exalt_points? }
      */
     app.put('/quota/config/:guild_id/:role_id', async (req, reply) => {
         const Params = z.object({
@@ -409,6 +409,14 @@ export default async function quotaRoutes(app: FastifyInstance) {
             moderation_points: z.number().min(0).optional().refine(
                 (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
                 { message: 'Moderation points must have at most 2 decimal places' }
+            ),
+            base_exalt_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Base exalt points must have at most 2 decimal places' }
+            ),
+            base_non_exalt_points: z.number().min(0).optional().refine(
+                (val) => val === undefined || Number.isFinite(val) && Math.round(val * 100) === val * 100,
+                { message: 'Base non-exalt points must have at most 2 decimal places' }
             ),
         });
 
