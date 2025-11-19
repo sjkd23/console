@@ -52,7 +52,7 @@ async function updatePublicRunMessage(
 /**
  * Handle "Set Party/Loc" button press.
  * Shows a modal with both party and location inputs, updates backend, and refreshes the public message.
- * Both fields are optional and can be left blank.
+ * Both fields are required when using this button.
  */
 export async function handleSetPartyLocation(btn: ButtonInteraction, runId: string) {
     const modal = createSimpleModal(
@@ -61,16 +61,16 @@ export async function handleSetPartyLocation(btn: ButtonInteraction, runId: stri
         [
             {
                 customId: 'party',
-                label: 'Party Name (optional)',
+                label: 'Party Name',
                 placeholder: 'e.g., USW3, EUW2, USS, etc.',
-                required: false,
+                required: true,
                 maxLength: 100
             },
             {
                 customId: 'location',
-                label: 'Location/Server (optional)',
+                label: 'Location/Server',
                 placeholder: 'e.g., O3, Bazaar, Realm, etc.',
-                required: false,
+                required: true,
                 maxLength: 100
             }
         ]
@@ -94,48 +94,37 @@ export async function handleSetPartyLocation(btn: ButtonInteraction, runId: stri
     const party = values.party;
     const location = values.location;
 
-    // Track which fields were actually updated (not empty)
-    let updatedParty = false;
-    let updatedLocation = false;
-
-    // Update party only if user entered a value (not empty)
-    if (party) {
-        try {
-            await patchJSON(`/runs/${runId}/party`, {
-                actorId: btn.user.id,
-                actorRoles: memberData.roleIds,
-                party
-            }, { guildId: guildCtx.guildId });
-            updatedParty = true;
-        } catch (err) {
-            if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                await submitted.followUp({ content: 'Only the organizer can update party.', ephemeral: true });
-                return;
-            }
-            const msg = err instanceof Error ? err.message : 'Unknown error';
-            await submitted.followUp({ content: `Error updating party: ${msg}`, ephemeral: true });
+    // Both fields are now required, so we always update both
+    try {
+        await patchJSON(`/runs/${runId}/party`, {
+            actorId: btn.user.id,
+            actorRoles: memberData.roleIds,
+            party
+        }, { guildId: guildCtx.guildId });
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await submitted.followUp({ content: 'Only the organizer can update party.', ephemeral: true });
             return;
         }
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await submitted.followUp({ content: `Error updating party: ${msg}`, ephemeral: true });
+        return;
     }
 
-    // Update location only if user entered a value (not empty)
-    if (location) {
-        try {
-            await patchJSON(`/runs/${runId}/location`, {
-                actorId: btn.user.id,
-                actorRoles: memberData.roleIds,
-                location
-            }, { guildId: guildCtx.guildId });
-            updatedLocation = true;
-        } catch (err) {
-            if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
-                await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
-                return;
-            }
-            const msg = err instanceof Error ? err.message : 'Unknown error';
-            await submitted.followUp({ content: `Error updating location: ${msg}`, ephemeral: true });
+    try {
+        await patchJSON(`/runs/${runId}/location`, {
+            actorId: btn.user.id,
+            actorRoles: memberData.roleIds,
+            location
+        }, { guildId: guildCtx.guildId });
+    } catch (err) {
+        if (err instanceof BackendError && err.code === 'NOT_ORGANIZER') {
+            await submitted.followUp({ content: 'Only the organizer can update location.', ephemeral: true });
             return;
         }
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        await submitted.followUp({ content: `Error updating location: ${msg}`, ephemeral: true });
+        return;
     }
 
     // Fetch updated run details
@@ -152,54 +141,41 @@ export async function handleSetPartyLocation(btn: ButtonInteraction, runId: stri
     // Log updates to raid-log
     if (btn.guild) {
         try {
-            if (updatedParty) {
-                await logRunInfoUpdate(
-                    btn.client,
-                    {
-                        guildId: btn.guild.id,
-                        organizerId: run.organizerId,
-                        organizerUsername: '',
-                        dungeonName: run.dungeonLabel,
-                        type: 'run',
-                        runId: parseInt(runId)
-                    },
-                    btn.user.id,
-                    'party',
-                    party
-                );
-            }
-            if (updatedLocation) {
-                await logRunInfoUpdate(
-                    btn.client,
-                    {
-                        guildId: btn.guild.id,
-                        organizerId: run.organizerId,
-                        organizerUsername: '',
-                        dungeonName: run.dungeonLabel,
-                        type: 'run',
-                        runId: parseInt(runId)
-                    },
-                    btn.user.id,
-                    'location',
-                    location
-                );
-            }
+            await logRunInfoUpdate(
+                btn.client,
+                {
+                    guildId: btn.guild.id,
+                    organizerId: run.organizerId,
+                    organizerUsername: '',
+                    dungeonName: run.dungeonLabel,
+                    type: 'run',
+                    runId: parseInt(runId)
+                },
+                btn.user.id,
+                'party',
+                party
+            );
+            await logRunInfoUpdate(
+                btn.client,
+                {
+                    guildId: btn.guild.id,
+                    organizerId: run.organizerId,
+                    organizerUsername: '',
+                    dungeonName: run.dungeonLabel,
+                    type: 'run',
+                    runId: parseInt(runId)
+                },
+                btn.user.id,
+                'location',
+                location
+            );
         } catch (e) {
             console.error('Failed to log party/location update to raid-log:', e);
         }
     }
 
     // Build confirmation message
-    let confirmMsg = '';
-    if (updatedParty && updatedLocation) {
-        confirmMsg = `✅ **Updated:**\n• Party: **${party}**\n• Location: **${location}**`;
-    } else if (updatedParty) {
-        confirmMsg = `✅ **Updated Party:** ${party}`;
-    } else if (updatedLocation) {
-        confirmMsg = `✅ **Updated Location:** ${location}`;
-    } else {
-        confirmMsg = '⚠️ No changes made (both fields left blank)';
-    }
+    const confirmMsg = `✅ **Updated:**\n• Party: **${party}**\n• Location: **${location}**`;
 
     // Refresh organizer panel with confirmation message
     await refreshOrganizerPanel(submitted, runId, confirmMsg);
