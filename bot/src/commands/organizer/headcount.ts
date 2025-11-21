@@ -160,44 +160,61 @@ export const headcount: SlashCommand = {
         });
 
         collector.on('collect', async (i) => {
-            if (i.isStringSelectMenu()) {
-                await i.deferUpdate();
+            // Guard: Only respond to interactions that haven't been handled yet
+            if (i.deferred || i.replied) {
+                return;
+            }
 
-                // Update the selected dungeons set
-                if (i.customId === 'headcount:select_exalt') {
-                    // Remove any previous exalt selections
-                    exaltOptions.forEach(d => selectedDungeonCodes.delete(d.codeName));
-                    // Add new selections
-                    i.values.forEach(v => selectedDungeonCodes.add(v));
-                } else if (i.customId === 'headcount:select_misc1') {
-                    // Remove any previous misc1 selections
-                    misc1Options.forEach(d => selectedDungeonCodes.delete(d.codeName));
-                    // Add new selections
-                    i.values.forEach(v => selectedDungeonCodes.add(v));
-                } else if (i.customId === 'headcount:select_misc2') {
-                    // Remove any previous misc2 selections
-                    misc2Options.forEach(d => selectedDungeonCodes.delete(d.codeName));
-                    // Add new selections
-                    i.values.forEach(v => selectedDungeonCodes.add(v));
+            try {
+                if (i.isStringSelectMenu()) {
+                    await i.deferUpdate();
+
+                    // Update the selected dungeons set
+                    if (i.customId === 'headcount:select_exalt') {
+                        // Remove any previous exalt selections
+                        exaltOptions.forEach(d => selectedDungeonCodes.delete(d.codeName));
+                        // Add new selections
+                        i.values.forEach(v => selectedDungeonCodes.add(v));
+                    } else if (i.customId === 'headcount:select_misc1') {
+                        // Remove any previous misc1 selections
+                        misc1Options.forEach(d => selectedDungeonCodes.delete(d.codeName));
+                        // Add new selections
+                        i.values.forEach(v => selectedDungeonCodes.add(v));
+                    } else if (i.customId === 'headcount:select_misc2') {
+                        // Remove any previous misc2 selections
+                        misc2Options.forEach(d => selectedDungeonCodes.delete(d.codeName));
+                        // Add new selections
+                        i.values.forEach(v => selectedDungeonCodes.add(v));
+                    }
+
+                    // Update the message to show current selection count
+                    const count = selectedDungeonCodes.size;
+                    const selectedList = Array.from(selectedDungeonCodes)
+                        .map(code => dungeonByCode[code]?.dungeonName || code)
+                        .join(', ');
+
+                    await interaction.editReply({
+                        content: 
+                            `**Select dungeons for the headcount**\n\n` +
+                            `Choose up to 5 dungeons total from any category, then click "Create Headcount":\n\n` +
+                            `**Selected (${count}/5):** ${selectedList || 'None'}`,
+                        components: [row1, row2, row3, buttonRow]
+                    });
+
+                } else if (i.isButton() && i.customId === 'headcount:confirm') {
+                    await i.deferUpdate();
+                    collector.stop('confirmed');
                 }
-
-                // Update the message to show current selection count
-                const count = selectedDungeonCodes.size;
-                const selectedList = Array.from(selectedDungeonCodes)
-                    .map(code => dungeonByCode[code]?.dungeonName || code)
-                    .join(', ');
-
-                await interaction.editReply({
-                    content: 
-                        `**Select dungeons for the headcount**\n\n` +
-                        `Choose up to 5 dungeons total from any category, then click "Create Headcount":\n\n` +
-                        `**Selected (${count}/5):** ${selectedList || 'None'}`,
-                    components: [row1, row2, row3, buttonRow]
-                });
-
-            } else if (i.isButton() && i.customId === 'headcount:confirm') {
-                await i.deferUpdate();
-                collector.stop('confirmed');
+            } catch (err) {
+                // Catch interaction already acknowledged errors (40060)
+                if (err && typeof err === 'object' && 'code' in err && err.code === 40060) {
+                    logger.debug('Interaction already acknowledged', { customId: i.customId });
+                } else {
+                    logger.error('Error handling headcount interaction', {
+                        error: err instanceof Error ? err.message : String(err),
+                        customId: i.customId
+                    });
+                }
             }
         });
 
