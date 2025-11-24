@@ -34,13 +34,8 @@ function updateKeysField(embed: EmbedBuilder, keyCounts: Record<string, number>,
     if (idx >= 0) {
         fields[idx] = { ...fields[idx], value: keysText };
     } else {
-        // Insert after Raiders field or at the end
-        const raidersIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
-        if (raidersIdx >= 0) {
-            fields.splice(raidersIdx + 1, 0, { name: 'Keys', value: keysText, inline: false });
-        } else {
-            fields.push({ name: 'Keys', value: keysText, inline: false });
-        }
+        // Insert at the beginning of the field list
+        fields.unshift({ name: 'Keys', value: keysText, inline: false });
     }
 
     return new EmbedBuilder(data).setFields(fields as any);

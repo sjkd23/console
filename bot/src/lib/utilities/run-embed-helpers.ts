@@ -6,21 +6,21 @@
 import { EmbedBuilder } from 'discord.js';
 
 /**
- * Update the Raiders count field in the embed.
+ * Remove the Raiders count field from the embed.
+ * The Raiders count is now private and only shown in the organizer panel.
  * 
  * @param embed - The embed to update
- * @param count - The number of raiders
- * @returns Updated embed
+ * @param count - The number of raiders (unused, kept for API compatibility)
+ * @returns Updated embed with Raiders field removed
  */
 export function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
     const data = embed.toJSON();
-    const fields = [...(data.fields ?? [])];
+    let fields = [...(data.fields ?? [])];
 
+    // Remove Raiders field if present (kept private to organizer panel)
     const idx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
     if (idx >= 0) {
-        fields[idx] = { ...fields[idx], value: String(count) };
-    } else {
-        fields.push({ name: 'Raiders', value: String(count), inline: false });
+        fields.splice(idx, 1);
     }
 
     return new EmbedBuilder(data).setFields(fields as any);

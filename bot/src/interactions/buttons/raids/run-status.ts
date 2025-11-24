@@ -598,10 +598,8 @@ function buildLiveEmbed(
         if (newKeysIdx >= 0) {
             fields[newKeysIdx] = { ...fields[newKeysIdx], value: finalValue };
         } else {
-            // Insert Keys field after Raiders field
-            const raidersIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
-            const insertIdx = raidersIdx >= 0 ? raidersIdx + 1 : fields.length;
-            fields.splice(insertIdx, 0, { name: 'Keys', value: finalValue, inline: false });
+            // Insert Keys field at the beginning of the field list
+            fields.unshift({ name: 'Keys', value: finalValue, inline: false });
         }
     }
 
@@ -687,10 +685,10 @@ function buildEndedEmbed(
     const data = embed.toJSON();
     const fields = [...(data.fields ?? [])];
 
-    // Keep only Raiders and Keys fields, remove others
+    // Keep only Keys field, remove others (Raiders is now private to organizer panel)
     const keepFields = fields.filter(f => {
         const name = (f.name ?? '').toLowerCase();
-        return name === 'raiders' || name === 'keys';
+        return name === 'keys';
     });
 
     return embed.setFields(keepFields as any);

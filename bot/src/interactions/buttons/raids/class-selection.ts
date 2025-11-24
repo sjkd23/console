@@ -12,13 +12,12 @@ import { patchJSON } from '../../../lib/utilities/http.js';
 
 function setRaidersField(embed: EmbedBuilder, count: number): EmbedBuilder {
     const data = embed.toJSON();
-    const fields = [...(data.fields ?? [])];
+    let fields = [...(data.fields ?? [])];
 
+    // Remove Raiders field if present (kept private to organizer panel)
     const idx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
     if (idx >= 0) {
-        fields[idx] = { ...fields[idx], value: String(count) };
-    } else {
-        fields.push({ name: 'Raiders', value: String(count), inline: false });
+        fields.splice(idx, 1);
     }
 
     return new EmbedBuilder(data).setFields(fields as any);
@@ -54,13 +53,8 @@ function updateClassField(embed: EmbedBuilder, classCounts: Record<string, numbe
     if (idx >= 0) {
         fields[idx] = { ...fields[idx], value: classText };
     } else {
-        // Insert after Raiders field
-        const raidersIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'raiders');
-        if (raidersIdx >= 0) {
-            fields.splice(raidersIdx + 1, 0, { name: 'Classes', value: classText, inline: false });
-        } else {
-            fields.push({ name: 'Classes', value: classText, inline: false });
-        }
+        // Insert at the beginning of the field list
+        fields.unshift({ name: 'Classes', value: classText, inline: false });
     }
 
     return new EmbedBuilder(data).setFields(fields as any);
