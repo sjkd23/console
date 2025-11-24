@@ -910,15 +910,16 @@ export async function getUserQuotaStats(
         [guildId, userId]
     );
 
-    // Get run count (organizer activities - where they earned quota_points)
-    // For manual logs, parse the run count from subject_id
+    // Get run count (organizer activities - where they have quota_points)
+    // For manual logs, parse the run count from subject_id and multiply by SIGN(quota_points)
+    // This handles negative removals correctly (e.g., -1 run when quota_points is negative)
     const runsRes = await query<{ count: string }>(
         `SELECT COALESCE(
             SUM(
                 CASE 
                     WHEN subject_id LIKE 'manual_log_run:%' 
-                    THEN (split_part(subject_id, ':', 4)::int)
-                    ELSE 1
+                    THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                    ELSE SIGN(quota_points)
                 END
             ), 
             0
@@ -927,7 +928,7 @@ export async function getUserQuotaStats(
          WHERE guild_id = $1::bigint 
            AND actor_user_id = $2::bigint
            AND action_type = 'run_completed'
-           AND quota_points > 0`,
+           AND quota_points != 0`,
         [guildId, userId]
     );
 
@@ -977,19 +978,19 @@ export async function getUserQuotaStats(
                 dungeon_key,
                 SUM(
                     CASE 
-                        WHEN points > 0 AND subject_id LIKE 'manual_log_run:%' 
-                        THEN (split_part(subject_id, ':', 4)::int)
-                        WHEN points > 0 
-                        THEN 1
+                        WHEN points != 0 AND subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(subject_id, ':', 4)::int * SIGN(points))
+                        WHEN points != 0 
+                        THEN SIGN(points)
                         ELSE 0
                     END
                 ) AS completed,
                 SUM(
                     CASE 
-                        WHEN quota_points > 0 AND subject_id LIKE 'manual_log_run:%' 
-                        THEN (split_part(subject_id, ':', 4)::int)
-                        WHEN quota_points > 0 
-                        THEN 1
+                        WHEN quota_points != 0 AND subject_id LIKE 'manual_log_run:%' 
+                        THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                        WHEN quota_points != 0 
+                        THEN SIGN(quota_points)
                         ELSE 0
                     END
                 ) AS organized
@@ -1059,17 +1060,18 @@ export async function getQuotaLeaderboard(
     // Use UNNEST to include all members, even those with 0 points
     // This ensures the leaderboard shows everyone with the role, not just those with activity
     // For manual logs (subject_id like 'manual_log_run:timestamp:userid:count'), extract the run count from subject_id
-    // For regular run logs (subject_id like 'run:123'), count as 1 run each
+    // and multiply by SIGN(quota_points) to handle negative removals correctly
+    // For regular run logs (subject_id like 'run:123'), use SIGN(quota_points) as count
     const res = await query<{ actor_user_id: string; total_points: string; run_count: string }>(
         `SELECT members.user_id::text AS actor_user_id,
                 COALESCE(SUM(qe.quota_points), 0)::text AS total_points,
                 COALESCE(
                     SUM(
                         CASE 
-                            WHEN qe.action_type = 'run_completed' AND qe.subject_id LIKE 'manual_log_run:%' 
-                            THEN (split_part(qe.subject_id, ':', 4)::int)
-                            WHEN qe.action_type = 'run_completed' 
-                            THEN 1
+                            WHEN qe.action_type = 'run_completed' AND qe.quota_points != 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(qe.subject_id, ':', 4)::int * SIGN(qe.quota_points))
+                            WHEN qe.action_type = 'run_completed' AND qe.quota_points != 0 
+                            THEN SIGN(qe.quota_points)
                             ELSE 0
                         END
                     ), 
@@ -1085,10 +1087,10 @@ export async function getQuotaLeaderboard(
                   COALESCE(
                       SUM(
                           CASE 
-                              WHEN qe.action_type = 'run_completed' AND qe.subject_id LIKE 'manual_log_run:%' 
-                              THEN (split_part(qe.subject_id, ':', 4)::int)
-                              WHEN qe.action_type = 'run_completed' 
-                              THEN 1
+                              WHEN qe.action_type = 'run_completed' AND qe.quota_points != 0 AND qe.subject_id LIKE 'manual_log_run:%' 
+                              THEN (split_part(qe.subject_id, ':', 4)::int * SIGN(qe.quota_points))
+                              WHEN qe.action_type = 'run_completed' AND qe.quota_points != 0 
+                              THEN SIGN(qe.quota_points)
                               ELSE 0
                           END
                       ), 
@@ -1127,10 +1129,10 @@ export async function getQuotaStatsForRole(
                 COALESCE(
                     SUM(
                         CASE 
-                            WHEN action_type = 'run_completed' AND subject_id LIKE 'manual_log_run:%' 
-                            THEN (split_part(subject_id, ':', 4)::int)
-                            WHEN action_type = 'run_completed' 
-                            THEN 1
+                            WHEN action_type = 'run_completed' AND quota_points != 0 AND subject_id LIKE 'manual_log_run:%' 
+                            THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                            WHEN action_type = 'run_completed' AND quota_points != 0 
+                            THEN SIGN(quota_points)
                             ELSE 0
                         END
                     ), 
@@ -1326,19 +1328,40 @@ export async function getLeaderboard(
     };
 
     if (category === 'runs_organized') {
-        // Count runs where user earned quota points (organizer activity)
+        // Count runs where user has quota points (organizer activity)
+        // For manual logs, parse the run count from subject_id and multiply by SIGN(quota_points)
+        // This handles negative removals correctly
         const { whereClause, params: queryParams } = buildQuery(
-            ['guild_id = $1::bigint', 'action_type = \'run_completed\'', 'quota_points > 0'],
+            ['guild_id = $1::bigint', 'action_type = \'run_completed\'', 'quota_points != 0'],
             [guildId]
         );
         
         queryStr = `
-            SELECT actor_user_id AS user_id, COUNT(*)::text AS count
+            SELECT actor_user_id AS user_id, 
+                   SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                           ELSE SIGN(quota_points)
+                       END
+                   )::text AS count
             FROM quota_event
             WHERE ${whereClause}
             GROUP BY actor_user_id
-            HAVING COUNT(*) > 0
-            ORDER BY COUNT(*) DESC, actor_user_id ASC
+            HAVING SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                           ELSE SIGN(quota_points)
+                       END
+                   ) > 0
+            ORDER BY SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(quota_points))
+                           ELSE SIGN(quota_points)
+                       END
+                   ) DESC, actor_user_id ASC
         `;
         params = queryParams;
     } else if (category === 'keys_popped') {
@@ -1372,25 +1395,45 @@ export async function getLeaderboard(
             logger.warn({ guildId, category }, 'Date filtering not supported for keys_popped category - ignoring since/until parameters');
         }
     } else if (category === 'dungeon_completions') {
-        // Count completions where user earned points (raider activity)
+        // Count completions where user has points (raider activity)
+        // For manual logs, parse the run count from subject_id and multiply by SIGN(points)
         const { whereClause, params: queryParams } = buildQuery(
-            ['guild_id = $1::bigint', 'action_type = \'run_completed\'', 'points > 0'],
+            ['guild_id = $1::bigint', 'action_type = \'run_completed\'', 'points != 0'],
             [guildId]
         );
         
         queryStr = `
-            SELECT actor_user_id AS user_id, COUNT(*)::text AS count
+            SELECT actor_user_id AS user_id, 
+                   SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(points))
+                           ELSE SIGN(points)
+                       END
+                   )::text AS count
             FROM quota_event
             WHERE ${whereClause}
             GROUP BY actor_user_id
-            HAVING COUNT(*) > 0
-            ORDER BY COUNT(*) DESC, actor_user_id ASC
+            HAVING SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(points))
+                           ELSE SIGN(points)
+                       END
+                   ) > 0
+            ORDER BY SUM(
+                       CASE 
+                           WHEN subject_id LIKE 'manual_log_run:%' 
+                           THEN (split_part(subject_id, ':', 4)::int * SIGN(points))
+                           ELSE SIGN(points)
+                       END
+                   ) DESC, actor_user_id ASC
         `;
         params = queryParams;
     } else if (category === 'points') {
         // Sum total points (raider activity)
         const { whereClause, params: queryParams } = buildQuery(
-            ['guild_id = $1::bigint', 'points > 0'],
+            ['guild_id = $1::bigint', 'points != 0'],
             [guildId]
         );
         
@@ -1406,7 +1449,7 @@ export async function getLeaderboard(
     } else { // quota_points
         // Sum total quota points (organizer/verifier activity)
         const { whereClause, params: queryParams } = buildQuery(
-            ['guild_id = $1::bigint', 'quota_points > 0'],
+            ['guild_id = $1::bigint', 'quota_points != 0'],
             [guildId]
         );
         

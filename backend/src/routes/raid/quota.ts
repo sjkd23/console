@@ -266,9 +266,9 @@ export default async function quotaRoutes(app: FastifyInstance) {
 
             const newTotal = result.rows[0]?.count ?? 0;
 
-            // Award points to the user if configured (only for positive amounts)
+            // Award or remove points for the keys (if points are configured)
             let totalPointsAwarded = 0;
-            if (pointsPerKey > 0 && adjustedAmount > 0) {
+            if (pointsPerKey > 0 && adjustedAmount !== 0) {
                 // Get current point total to prevent negative values
                 const currentPointsResult = await query<{ total_points: string }>(
                     `SELECT COALESCE(SUM(points), 0) as total_points
@@ -290,7 +290,7 @@ export default async function quotaRoutes(app: FastifyInstance) {
                     : totalPointsToAdd;
 
                 if (finalPointsToAdd !== 0) {
-                    // Log a single quota event for all keys at once
+                    // Log a single quota event for all keys at once (can be positive or negative)
                     const event = await query<{ id: number; points: number }>(
                         `INSERT INTO quota_event (guild_id, actor_user_id, action_type, subject_id, dungeon_key, points, quota_points)
                          VALUES ($1::bigint, $2::bigint, 'run_completed', $3, $4, $5, 0)
