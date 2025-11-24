@@ -30,6 +30,7 @@ import {
     setKeyPopPointsForDungeon,
     deleteKeyPopPointsForDungeon,
     getLeaderboard,
+    recalculateQuotaPoints,
 } from '../../lib/quota/quota.js';
 
 /**
@@ -1431,6 +1432,74 @@ export default async function quotaRoutes(app: FastifyInstance) {
         } catch (err) {
             console.error(`[Quota] Failed to award moderation points:`, err);
             return Errors.internal(reply, 'Failed to award moderation points');
+        }
+    });
+
+    /**
+     * POST /quota/recalculate/:guild_id/:role_id
+     * Recalculate quota points for all run_completed events in the current quota period.
+     * Fetches all organized runs and recalculates their points based on current configuration.
+     * 
+     * This is useful when:
+     * - Point values change and you want to retroactively apply them
+     * - Manual logs were created with incorrect point values
+     * - You want to ensure consistency between config and stored points
+     * 
+     * Authorization: actorId must have admin permission or be managing guild roles
+     */
+    app.post('/quota/recalculate/:guild_id/:role_id', async (req, reply) => {
+        const ParamsSchema = z.object({
+            guild_id: zSnowflake,
+            role_id: zSnowflake,
+        });
+
+        const BodySchema = z.object({
+            actorId: zSnowflake,
+            actorRoles: z.array(zSnowflake).optional(),
+            actorHasAdminPermission: z.boolean().optional(),
+        });
+
+        const paramsResult = ParamsSchema.safeParse(req.params);
+        const bodyResult = BodySchema.safeParse(req.body);
+
+        if (!paramsResult.success) {
+            const msg = paramsResult.error.issues.map(i => i.message).join('; ');
+            return Errors.validation(reply, msg);
+        }
+
+        if (!bodyResult.success) {
+            const msg = bodyResult.error.issues.map(i => i.message).join('; ');
+            return Errors.validation(reply, msg);
+        }
+
+        const { guild_id, role_id } = paramsResult.data;
+        const { actorId, actorRoles } = bodyResult.data;
+
+        // Authorization: actor must have admin permission
+        const canManage = await canManageGuildRoles(guild_id, actorId, actorRoles);
+        if (!canManage) {
+            console.log(`[Quota] User ${actorId} denied recalculate for guild ${guild_id} - no admin permission`);
+            return reply.code(403).send({
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Administrator permission required',
+                },
+            });
+        }
+
+        try {
+            const result = await recalculateQuotaPoints(guild_id, role_id);
+            
+            console.log(`[Quota] Recalculated ${result.recalculated} events for guild ${guild_id}, role ${role_id}`);
+
+            return reply.send({
+                recalculated: result.recalculated,
+                total_points: result.total_points,
+                message: `Successfully recalculated ${result.recalculated} events`,
+            });
+        } catch (err) {
+            console.error(`[Quota] Failed to recalculate quota points:`, err);
+            return Errors.internal(reply, 'Failed to recalculate quota points');
         }
     });
 }

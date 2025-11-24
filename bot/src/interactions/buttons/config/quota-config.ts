@@ -12,7 +12,7 @@ import {
     StringSelectMenuInteraction,
     ComponentType,
 } from 'discord.js';
-import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, deleteQuotaRoleConfig, getGuildChannels, BackendError } from '../../../lib/utilities/http.js';
+import { getQuotaRoleConfig, updateQuotaRoleConfig, setDungeonOverride, deleteDungeonOverride, deleteQuotaRoleConfig, getGuildChannels, BackendError, recalculateQuotaPoints } from '../../../lib/utilities/http.js';
 import { DUNGEON_DATA } from '../../../constants/dungeons/DungeonData.js';
 import { updateQuotaPanel } from '../../../lib/ui/quota-panel.js';
 import { formatPoints } from '../../../lib/utilities/format-helpers.js';
@@ -856,7 +856,8 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
 
 /**
  * Handle quota_refresh_panel button
- * Updates the leaderboard panel in the quota channel
+ * Recalculates quota points based on current configuration, then updates the panel.
+ * This ensures the panel reflects current point values even if configuration changed.
  */
 export async function handleQuotaRefreshPanel(interaction: ButtonInteraction) {
     const customIdParts = interaction.customId.split(':');
@@ -894,10 +895,25 @@ export async function handleQuotaRefreshPanel(interaction: ButtonInteraction) {
             return;
         }
 
-        // Update panel
+        // Get member roles for authorization
+        const memberRoles = member.roles.cache.map(r => r.id);
+
+        // Step 1: Recalculate quota points based on current configuration
+        await interaction.editReply('🔄 Recalculating quota points based on current configuration...');
+        
+        const recalcResult = await recalculateQuotaPoints(interaction.guildId!, roleId, {
+            actorId: interaction.user.id,
+            actorRoles: memberRoles,
+        });
+
+        // Step 2: Update panel with recalculated values
+        await interaction.editReply('🔄 Updating quota panel...');
         await updateQuotaPanel(interaction.client, interaction.guildId!, roleId, result.config);
 
-        await interaction.editReply('✅ Quota panel has been updated successfully!');
+        await interaction.editReply(
+            `✅ Quota panel has been updated successfully!\n` +
+            `📊 Recalculated ${recalcResult.recalculated} events with a total of ${recalcResult.total_points} points.`
+        );
     } catch (err) {
         console.error('Failed to refresh quota panel:', err);
         const msg = err instanceof BackendError ? err.message : 'Unknown error';

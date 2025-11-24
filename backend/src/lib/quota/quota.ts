@@ -1428,3 +1428,117 @@ export async function getLeaderboard(
         count: Number(row.count),
     }));
 }
+
+/**
+ * Recalculate quota points for all run_completed events in a quota period.
+ * This fetches all runs organized during the period and recalculates their
+ * quota_points based on current configuration values.
+ * 
+ * This is useful when:
+ * - Point values change and you want to retroactively apply them
+ * - Manual logs were created with incorrect point values
+ * - You want to ensure consistency between config and stored points
+ * 
+ * @param guildId - Discord guild ID
+ * @param roleId - Discord role ID for the quota config
+ * @returns Number of events recalculated
+ */
+export async function recalculateQuotaPoints(
+    guildId: string,
+    roleId: string
+): Promise<{ recalculated: number; total_points: number }> {
+    logger.info({ guildId, roleId }, 'Starting quota points recalculation');
+
+    // Get the quota config for this role
+    const config = await getQuotaRoleConfig(guildId, roleId);
+    if (!config) {
+        throw new Error(`No quota config found for guild ${guildId}, role ${roleId}`);
+    }
+
+    // Determine the current quota period
+    const periodStart = getQuotaPeriodStart(config);
+    const periodEnd = getQuotaPeriodEnd(config);
+
+    logger.debug({ 
+        guildId, 
+        roleId, 
+        periodStart: periodStart.toISOString(), 
+        periodEnd: periodEnd.toISOString() 
+    }, 'Calculated quota period for recalculation');
+
+    // Fetch all run_completed events in this period where quota_points > 0
+    // (indicating organizer activity, not raider completions)
+    const eventsRes = await query<{
+        id: string;
+        actor_user_id: string;
+        dungeon_key: string;
+        quota_points: string;
+    }>(
+        `SELECT id, actor_user_id, dungeon_key, quota_points
+         FROM quota_event
+         WHERE guild_id = $1::bigint
+           AND action_type = 'run_completed'
+           AND quota_points > 0
+           AND created_at >= $2
+           AND created_at < $3
+         ORDER BY id ASC`,
+        [guildId, periodStart.toISOString(), periodEnd.toISOString()]
+    );
+
+    if (eventsRes.rowCount === 0) {
+        logger.info({ guildId, roleId }, 'No events to recalculate');
+        return { recalculated: 0, total_points: 0 };
+    }
+
+    logger.debug({ guildId, roleId, eventCount: eventsRes.rowCount }, 'Found events to recalculate');
+
+    // Fetch the guild to get member roles
+    // Note: We can't easily get historical roles, so we'll use current config
+    // without role-specific overrides for simplicity
+    let recalculatedCount = 0;
+    let totalPoints = 0;
+
+    for (const event of eventsRes.rows) {
+        // Recalculate points based on current configuration
+        // We don't have the user's roles at time of logging, so we calculate
+        // points without role filters (uses max override or base points)
+        const newPoints = await getPointsForDungeon(
+            guildId,
+            event.dungeon_key,
+            undefined // No role filter - will use max available points
+        );
+
+        const oldPoints = Number(event.quota_points);
+
+        // Only update if points changed
+        if (newPoints !== oldPoints) {
+            await query(
+                `UPDATE quota_event
+                 SET quota_points = $1
+                 WHERE id = $2`,
+                [newPoints, event.id]
+            );
+
+            logger.debug({
+                guildId,
+                roleId,
+                eventId: event.id,
+                dungeonKey: event.dungeon_key,
+                oldPoints,
+                newPoints
+            }, 'Updated event quota points');
+        }
+
+        recalculatedCount++;
+        totalPoints += newPoints;
+    }
+
+    logger.info({ 
+        guildId, 
+        roleId, 
+        recalculated: recalculatedCount,
+        totalPoints 
+    }, 'Completed quota points recalculation');
+
+    return { recalculated: recalculatedCount, total_points: totalPoints };
+}

@@ -38,6 +38,7 @@ export const DUNGEONS: readonly DungeonConfig[] = [
     { code: 'CULTIST_HIDEOUT', name: 'Cultist Hideout', category: 'Exaltation Dungeons' },
     { code: 'THE_VOID', name: 'Void', category: 'Exaltation Dungeons' },
     { code: 'LOST_HALLS', name: 'Lost Halls', category: 'Exaltation Dungeons' },
+    { code: 'ORYX_3', name: 'Oryx 3', category: 'Exaltation Dungeons' },
     { code: 'MOONLIGHT VILLAGE', name: 'Moonlight Village', category: 'Exaltation Dungeons' },
     { code: 'STEAMWORKS', name: 'Steamworks', category: 'Exaltation Dungeons' },
     { code: 'ADVANCED STEAMWORKS', name: 'Advanced Steamworks', category: 'Exaltation Dungeons' },

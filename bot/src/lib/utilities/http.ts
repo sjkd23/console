@@ -734,6 +734,22 @@ export async function deleteQuotaRoleConfig(
     return makeRequest('DELETE', `/quota/config/${guildId}/${roleId}`, payload);
 }
 
+/** Recalculate quota points for a role based on current configuration (POST /quota/recalculate/:guild_id/:role_id) */
+export async function recalculateQuotaPoints(
+    guildId: string,
+    roleId: string,
+    payload: {
+        actorId: string;
+        actorRoles?: string[];
+    }
+): Promise<{
+    recalculated: number;
+    total_points: number;
+    message: string;
+}> {
+    return postJSON(`/quota/recalculate/${guildId}/${roleId}`, payload);
+}
+
 /** Get quota leaderboard (POST /quota/leaderboard/:guild_id/:role_id) */
 export async function getQuotaLeaderboard(
     guildId: string,
