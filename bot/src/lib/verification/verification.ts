@@ -635,12 +635,12 @@ export function createManualVerificationEmbed(
     imageUrl?: string | null
 ): EmbedBuilder {
     const defaultInstructions = 
-        '**Send a screenshot showing:**\n\n' +
-        '1️⃣ Your vault or character screen\n' +
+        '**Send a fullscreen screenshot showing:**\n\n' +
+        '1️⃣ You in your vault\n' +
         '2️⃣ Your Discord tag in the chat\n' +
         '3️⃣ Your IGN clearly visible\n\n' +
-        '**Example:** Open vault, type Discord tag in chat, screenshot it.\n\n' +
-        '⚠️ **Screenshot must be clear and unedited.**';
+        '**Example:** Go to vault, type Discord tag in chat, screenshot it.\n\n' +
+        '⚠️ **Screenshot must be clear, fullscreen and unedited.**';
 
     const embed = new EmbedBuilder()
         .setTitle('📷 Manual Verification')
