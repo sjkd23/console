@@ -93,9 +93,33 @@ async function handleVerificationApproveInternal(interaction: ButtonInteraction,
                 timestamp: new Date().toISOString(),
             });
             
+            // Update the ticket message to show cancellation
+            try {
+                const ticketMessage = interaction.message;
+                if (ticketMessage && ticketMessage.embeds.length > 0) {
+                    const originalEmbed = EmbedBuilder.from(ticketMessage.embeds[0]);
+                    
+                    // Add cancellation message to description
+                    const currentDescription = originalEmbed.data.description || '';
+                    originalEmbed.setDescription(
+                        currentDescription + '\n\n' +
+                        '**Status:** ❌ Verification Canceled\n' +
+                        'This verification session has been cancelled or expired.'
+                    );
+                    
+                    await ticketMessage.edit({
+                        embeds: [originalEmbed],
+                        components: [], // Remove buttons
+                    });
+                }
+            } catch (updateErr) {
+                console.error('[VerificationApprove] Failed to update ticket message:', updateErr);
+            }
+            
             await interaction.reply({
                 content: '❌ **Session Not Found**\n\n' +
-                'Verification session not found. It may have been cancelled or expired.',
+                'Verification session not found. It may have been cancelled or expired.\n' +
+                'The ticket has been updated.',
                 ephemeral: true,
             });
             return;
@@ -179,11 +203,44 @@ export async function handleVerificationApproveModal(interaction: ModalSubmitInt
         const session = await getSessionByUserId(userId);
 
         if (!session) {
-            console.error('[VerificationDeny] Session not found', {
+            console.error('[VerificationApproveModal] Session not found', {
                 userId,
                 requestedBy: interaction.user.id,
                 timestamp: new Date().toISOString(),
             });
+            
+            // Try to find and update the ticket message to show cancellation
+            try {
+                const channel = interaction.channel;
+                if (channel && channel.isTextBased()) {
+                    // Search recent messages for the verification ticket
+                    const messages = await channel.messages.fetch({ limit: 50 });
+                    const ticketMessage = messages.find(msg => 
+                        msg.embeds.length > 0 && 
+                        msg.embeds[0].data.title === '🎫 Manual Verification Request' &&
+                        msg.embeds[0].data.description?.includes(userId)
+                    );
+                    
+                    if (ticketMessage && ticketMessage.embeds.length > 0) {
+                        const originalEmbed = EmbedBuilder.from(ticketMessage.embeds[0]);
+                        
+                        // Add cancellation message to description
+                        const currentDescription = originalEmbed.data.description || '';
+                        originalEmbed.setDescription(
+                            currentDescription + '\n\n' +
+                            '**Status:** ❌ Verification Canceled\n' +
+                            'This verification session has been cancelled or expired.'
+                        );
+                        
+                        await ticketMessage.edit({
+                            embeds: [originalEmbed],
+                            components: [], // Remove buttons
+                        });
+                    }
+                }
+            } catch (updateErr) {
+                console.error('[VerificationApproveModal] Failed to update ticket message:', updateErr);
+            }
             
             await interaction.editReply(
                 '❌ **Session Not Found**\n\n' +
@@ -448,9 +505,33 @@ async function handleVerificationDenyInternal(interaction: ButtonInteraction, us
         const session = await getSessionByUserId(userId);
 
         if (!session) {
+            // Update the ticket message to show cancellation
+            try {
+                const ticketMessage = interaction.message;
+                if (ticketMessage && ticketMessage.embeds.length > 0) {
+                    const originalEmbed = EmbedBuilder.from(ticketMessage.embeds[0]);
+                    
+                    // Add cancellation message to description
+                    const currentDescription = originalEmbed.data.description || '';
+                    originalEmbed.setDescription(
+                        currentDescription + '\n\n' +
+                        '**Status:** ❌ Verification Canceled\n' +
+                        'This verification session has been cancelled or expired.'
+                    );
+                    
+                    await ticketMessage.edit({
+                        embeds: [originalEmbed],
+                        components: [], // Remove buttons
+                    });
+                }
+            } catch (updateErr) {
+                console.error('[VerificationDeny] Failed to update ticket message:', updateErr);
+            }
+            
             await interaction.editReply(
                 '❌ **Session Not Found**\n\n' +
-                'Verification session not found. It may have been cancelled or expired.'
+                'Verification session not found. It may have been cancelled or expired.\n' +
+                'The ticket has been updated.'
             );
             return;
         }
