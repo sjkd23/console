@@ -5,8 +5,10 @@
 
 import { ButtonInteraction, EmbedBuilder, MessageFlags } from 'discord.js';
 import { setEmbedField } from '../../../lib/ui/embed-builders.js';
-import { getParticipants, updateParticipantsList } from '../../../lib/state/headcount-state.js';
+import { getParticipants, updateParticipantsList, getOrganizerId } from '../../../lib/state/headcount-state.js';
 import { logRaidJoin } from '../../../lib/logging/raid-logger.js';
+import { getActiveHeadcountPanels } from '../../../lib/state/headcount-panel-tracker.js';
+import { showHeadcountPanel } from './headcount-organizer-panel.js';
 
 /**
  * Handle join button click for headcount panel.
@@ -75,6 +77,38 @@ export async function handleHeadcountJoin(btn: ButtonInteraction, panelTimestamp
             }
         } catch (e) {
             console.error('Failed to log headcount join to raid-log:', e);
+        }
+    }
+
+    // Auto-refresh all active headcount organizer panels for this message
+    // This ensures the participant count updates in real-time when someone joins/leaves
+    const activePanels = getActiveHeadcountPanels(msg.id);
+    if (activePanels.length > 0) {
+        // Extract dungeon codes from the button components
+        const dungeonCodes: string[] = [];
+        for (const row of msg.components) {
+            if ('components' in row) {
+                for (const component of row.components) {
+                    if ('customId' in component && component.customId?.startsWith('headcount:key:')) {
+                        const parts = component.customId.split(':');
+                        const dungeonCode = parts[3];
+                        if (dungeonCode && !dungeonCodes.includes(dungeonCode)) {
+                            dungeonCodes.push(dungeonCode);
+                        }
+                    }
+                }
+            }
+        }
+        
+        const organizerId = getOrganizerId(embed);
+        if (organizerId) {
+            for (const panelInteraction of activePanels) {
+                try {
+                    await showHeadcountPanel(panelInteraction, msg, embed, organizerId, dungeonCodes);
+                } catch (e) {
+                    console.error('Failed to refresh headcount organizer panel on join/leave:', e);
+                }
+            }
         }
     }
 

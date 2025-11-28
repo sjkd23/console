@@ -13,7 +13,7 @@ import { logRaidJoin } from '../../../lib/logging/raid-logger.js';
 import { removeRunRole } from '../../../lib/utilities/run-role-manager.js';
 import { updateRunParticipation } from '../../../lib/utilities/run-embed-helpers.js';
 import { getAllOrganizerPanelsForRun } from '../../../lib/state/organizer-panel-tracker.js';
-import { showOrganizerPanel } from './organizer-panel.js';
+import { updateRunOrganizerPanel } from './organizer-panel.js';
 
 export async function handleLeave(btn: ButtonInteraction, runId: string) {
     // Defer the reply so we can send a follow-up message
@@ -110,25 +110,17 @@ export async function handleLeave(btn: ButtonInteraction, runId: string) {
     }
 
     // Auto-refresh any active organizer panels for this run
+    // This ensures the raider count updates in real-time when someone leaves
     const activePanels = getAllOrganizerPanelsForRun(runId);
-    for (const { interaction } of activePanels) {
-        try {
-            // Fetch fresh run data for organizer panel
-            const runData = await getJSON<{
-                status: string;
-                dungeonLabel: string;
-                dungeonKey: string;
-                organizerId: string;
-                screenshotUrl?: string | null;
-                o3Stage?: string | null;
-            }>(`/runs/${runId}`, { guildId }).catch(() => null);
-            
-            if (runData) {
-                await showOrganizerPanel(interaction, parseInt(runId), guildId, runData);
+    if (activePanels.length > 0) {
+        for (const { handle } of activePanels) {
+            try {
+                // Update the panel using the handle (knows how to edit itself correctly)
+                await updateRunOrganizerPanel(handle, parseInt(runId), guildId);
+            } catch (err) {
+                // Panel might be closed or expired - this is expected behavior
+                console.log('Failed to auto-refresh organizer panel on leave:', err);
             }
-        } catch (err) {
-            // Silently fail - organizer panel might be closed or expired
-            console.log('Failed to auto-refresh organizer panel on leave:', err);
         }
     }
 

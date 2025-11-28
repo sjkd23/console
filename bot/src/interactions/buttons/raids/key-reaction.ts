@@ -3,7 +3,7 @@ import { postJSON, getJSON } from '../../../lib/utilities/http.js';
 import { formatKeyLabel, getKeyTypeSuffix, getDungeonKeyEmoji, getEmojiDisplayForKeyType } from '../../../lib/utilities/key-emoji-helpers.js';
 import { logKeyReaction } from '../../../lib/logging/raid-logger.js';
 import { getAllOrganizerPanelsForRun } from '../../../lib/state/organizer-panel-tracker.js';
-import { showOrganizerPanel } from './organizer-panel.js';
+import { updateRunOrganizerPanel } from './organizer-panel.js';
 import { sendKeyReactorDM, hasBeenNotified, markAsNotified } from '../../../lib/utilities/key-reactor-notifications.js';
 
 
@@ -85,21 +85,10 @@ export async function handleKeyReaction(btn: ButtonInteraction, runId: string, k
 
     // Auto-refresh any active organizer panels for this run
     const activePanels = getAllOrganizerPanelsForRun(runId);
-    for (const { interaction } of activePanels) {
+    for (const { handle } of activePanels) {
         try {
-            // Fetch fresh run data for organizer panel
-            const runData = await getJSON<{
-                status: string;
-                dungeonLabel: string;
-                dungeonKey: string;
-                organizerId: string;
-                screenshotUrl?: string | null;
-                o3Stage?: string | null;
-            }>(`/runs/${runId}`, { guildId }).catch(() => null);
-            
-            if (runData) {
-                await showOrganizerPanel(interaction, parseInt(runId), guildId, runData);
-            }
+            // Update the panel using the handle (knows how to edit itself correctly)
+            await updateRunOrganizerPanel(handle, parseInt(runId), guildId);
         } catch (err) {
             // Silently fail - organizer panel might be closed or expired
             console.log('Failed to auto-refresh organizer panel:', err);

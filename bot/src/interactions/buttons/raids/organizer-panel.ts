@@ -6,34 +6,47 @@ import {
     EmbedBuilder,
     MessageFlags,
     MessageEditOptions,
-    ModalSubmitInteraction
+    ModalSubmitInteraction,
+    ChatInputCommandInteraction,
+    Message
 } from 'discord.js';
 import { getJSON } from '../../../lib/utilities/http.js';
 import { checkOrganizerAccess } from '../../../lib/permissions/interaction-permissions.js';
 import { formatKeyLabel, getDungeonKeyEmoji, getDungeonKeyEmojiIdentifier, getEmojiDisplayForKeyType } from '../../../lib/utilities/key-emoji-helpers.js';
 import { logButtonClick } from '../../../lib/logging/raid-logger.js';
-import { registerOrganizerPanel } from '../../../lib/state/organizer-panel-tracker.js';
+import { registerOrganizerPanel, RunOrganizerPanelHandle } from '../../../lib/state/organizer-panel-tracker.js';
 
 /**
- * Internal function to build and show the organizer panel.
- * Used by both initial access and confirmed access.
- * @param confirmationMessage Optional message to show at the top of the panel (e.g., "✅ Party set to: USW3")
+ * Build the organizer panel content (embed and components) for a run.
+ * This is a pure function that doesn't interact with Discord directly.
+ * 
+ * @returns Object with embed and components to display, or null if run has ended
  */
-export async function showOrganizerPanel(
-    btn: ButtonInteraction | ModalSubmitInteraction, 
-    runId: number, 
-    guildId: string, 
-    run: {
+async function buildRunOrganizerPanelContent(
+    runId: number,
+    guildId: string,
+    confirmationMessage?: string
+): Promise<{ embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } | null> {
+    // Fetch run data
+    const run = await getJSON<{
         status: string;
         dungeonLabel: string;
         dungeonKey: string;
         organizerId: string;
         screenshotUrl?: string | null;
-        o3Stage?: string | null; // Track O3 progression: null -> 'closed' -> 'miniboss' -> 'third_room'
-    }, 
-    confirmationMessage?: string
-) {
-    // Fetch key reaction users if there are key reactions for this dungeon
+        o3Stage?: string | null;
+    }>(`/runs/${runId}`, { guildId }).catch(() => null);
+
+    if (!run) {
+        return null;
+    }
+
+    // If run has ended, return null to signal no panel should be shown
+    if (run.status !== 'open' && run.status !== 'live') {
+        return null;
+    }
+
+    // Fetch key reaction users
     let headcountKeys: Record<string, string[]> = {};
     let raidKeys: Record<string, string[]> = {};
     const keyUsersResponse = await getJSON<{ 
@@ -47,7 +60,7 @@ export async function showOrganizerPanel(
     headcountKeys = keyUsersResponse.headcountKeys;
     raidKeys = keyUsersResponse.raidKeys;
 
-    // Fetch raider count from backend
+    // Fetch raider count
     let joinCount = 0;
     try {
         const countResponse = await getJSON<{ joinCount: number; classCounts: Record<string, number> }>(
@@ -56,69 +69,55 @@ export async function showOrganizerPanel(
         );
         joinCount = countResponse.joinCount || 0;
     } catch (e) {
-        // If endpoint fails, default to 0
         console.error('Failed to fetch raider count:', e);
         joinCount = 0;
     }
 
-    // Use dungeonLabel from run data instead of trying to parse from embed
-    // (which might be the confirmation embed if coming from confirm button)
-    const dungeonTitle = run.dungeonLabel || 'Raid';
+    // Build panel embed
+    const panelEmbed = new EmbedBuilder()
+        .setTitle(`Organizer Panel — ${run.dungeonLabel}`)
+        .setTimestamp(new Date());
 
-        const panelEmbed = new EmbedBuilder()
-            .setTitle(`Organizer Panel — ${dungeonTitle}`)
-            .setTimestamp(new Date());
+    let description = '';
+    
+    // Add confirmation message at the top if provided
+    if (confirmationMessage) {
+        description += `${confirmationMessage}\n\n`;
+    }
+    
+    // Show raider count
+    description += `**Raiders Joined:** ${joinCount}\n\n`;
+    description += 'Manage the raid with the controls below.';
 
-        // Build description with join count, key reaction users, and confirmation message
-        let description = '';
-        
-        // Add confirmation message at the top if provided
-        if (confirmationMessage) {
-            description += `${confirmationMessage}\n\n`;
+    // Show Headcount Keys
+    if (Object.keys(headcountKeys).length > 0) {
+        description += '\n\n**Headcount Keys:**';
+        for (const [keyType, userIds] of Object.entries(headcountKeys)) {
+            const keyLabel = formatKeyLabel(keyType);
+            const keyEmoji = getEmojiDisplayForKeyType(keyType);
+            const mentions = userIds.map(id => `<@${id}>`).join(', ');
+            description += `\n${keyEmoji} **${keyLabel}** (${userIds.length}): ${mentions}`;
         }
-        
-        // Show raider count
-        description += `**Raiders Joined:** ${joinCount}\n\n`;
-        
-        description += 'Manage the raid with the controls below.';
+    }
 
-        // Show Headcount Keys (from headcount phase before conversion)
-        if (Object.keys(headcountKeys).length > 0) {
-            description += '\n\n**Headcount Keys:**';
-        
-            for (const [keyType, userIds] of Object.entries(headcountKeys)) {
-                const keyLabel = formatKeyLabel(keyType);
-                // Use key-specific emoji for each key type (important for Oryx 3 with multiple key types)
-                const keyEmoji = getEmojiDisplayForKeyType(keyType);
-
-                // Create user mentions
-                const mentions = userIds.map(id => `<@${id}>`).join(', ');
-                description += `\n${keyEmoji} **${keyLabel}** (${userIds.length}): ${mentions}`;
-            }
+    // Show Raid Keys
+    if (Object.keys(raidKeys).length > 0) {
+        description += '\n\n**Raid Keys:**';
+        for (const [keyType, userIds] of Object.entries(raidKeys)) {
+            const keyLabel = formatKeyLabel(keyType);
+            const keyEmoji = getEmojiDisplayForKeyType(keyType);
+            const mentions = userIds.map(id => `<@${id}>`).join(', ');
+            description += `\n${keyEmoji} **${keyLabel}** (${userIds.length}): ${mentions}`;
         }
-
-        // Show Raid Keys (from run phase after conversion)
-        if (Object.keys(raidKeys).length > 0) {
-            description += '\n\n**Raid Keys:**';
-        
-            for (const [keyType, userIds] of Object.entries(raidKeys)) {
-                const keyLabel = formatKeyLabel(keyType);
-                // Use key-specific emoji for each key type (important for Oryx 3 with multiple key types)
-                const keyEmoji = getEmojiDisplayForKeyType(keyType);
-
-                // Create user mentions
-                const mentions = userIds.map(id => `<@${id}>`).join(', ');
-                description += `\n${keyEmoji} **${keyLabel}** (${userIds.length}): ${mentions}`;
-            }
-        }
+    }
 
     panelEmbed.setDescription(description);
 
+    // Build control buttons based on run status
     let controls: ActionRowBuilder<ButtonBuilder>[];
 
     if (run.status === 'open') {
-        // Starting phase: Start, Cancel (row 1) + Set Party/Loc, Chain Amount (row 2)
-        // For Oryx 3: Add screenshot instruction button if not yet submitted (row 3)
+        // Starting phase
         const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()
                 .setCustomId(`run:start:${runId}`)
@@ -130,7 +129,6 @@ export async function showOrganizerPanel(
                 .setStyle(ButtonStyle.Danger)
         );
         
-        // For Oryx 3, don't show Chain Amount button
         const row2Components = [
             new ButtonBuilder()
                 .setCustomId(`run:setpartyloc:${runId}`)
@@ -148,32 +146,27 @@ export async function showOrganizerPanel(
         }
         
         const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Components);
-        
         controls = [row1, row2];
         
-        // Add screenshot instruction button for Oryx 3 if not yet submitted
+        // Add screenshot button for Oryx 3
         if (run.dungeonKey === 'ORYX_3') {
             const screenshotRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`run:screenshot:${runId}`)
                     .setLabel(run.screenshotUrl ? '✅ Screenshot Submitted' : '📸 Submit Screenshot')
                     .setStyle(run.screenshotUrl ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setDisabled(!!run.screenshotUrl) // Disable if already submitted
+                    .setDisabled(!!run.screenshotUrl)
             );
             controls.push(screenshotRow);
         }
-    } else if (run.status === 'live') {
-        // Live phase: End, Ping Raiders, Update Note, Key popped/Realm Score (row 1) + Set Party/Loc, Chain Amount, Cancel (row 2)
-
-        // For Oryx 3, show progression buttons based on current stage
+    } else { // run.status === 'live'
+        // Live phase
         const actionButtons: ButtonBuilder[] = [];
         
         if (run.dungeonKey === 'ORYX_3') {
-            // Oryx 3 progression flow based on stage
             const o3Stage = run.o3Stage || null;
             
             if (!o3Stage) {
-                // Initial stage: Show Realm Score % and Realm Closed buttons
                 actionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`run:realmscore:${runId}`)
@@ -185,7 +178,6 @@ export async function showOrganizerPanel(
                         .setStyle(ButtonStyle.Primary)
                 );
             } else if (o3Stage === 'closed') {
-                // After Realm Closed: Show Miniboss button
                 actionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`run:miniboss:${runId}`)
@@ -193,7 +185,6 @@ export async function showOrganizerPanel(
                         .setStyle(ButtonStyle.Primary)
                 );
             } else if (o3Stage === 'miniboss') {
-                // After Miniboss selected: Show Third Room button
                 actionButtons.push(
                     new ButtonBuilder()
                         .setCustomId(`run:thirdroom:${runId}`)
@@ -201,15 +192,12 @@ export async function showOrganizerPanel(
                         .setStyle(ButtonStyle.Success)
                 );
             }
-            // After Third Room is clicked, no more progression buttons (o3Stage === 'third_room')
         } else {
-            // Build the "Key popped" button with the appropriate emoji
             const keyPoppedButton = new ButtonBuilder()
                 .setCustomId(`run:keypop:${runId}`)
                 .setLabel('Key popped')
                 .setStyle(ButtonStyle.Success);
 
-            // Add emoji from the dungeon's first key reaction if available
             const keyEmojiIdentifier = getDungeonKeyEmojiIdentifier(run.dungeonKey);
             if (keyEmojiIdentifier) {
                 keyPoppedButton.setEmoji(keyEmojiIdentifier);
@@ -226,7 +214,6 @@ export async function showOrganizerPanel(
             ...actionButtons
         );
         
-        // For Oryx 3, don't show Chain Amount button
         const row2Components = [
             new ButtonBuilder()
                 .setCustomId(`run:setpartyloc:${runId}`)
@@ -252,8 +239,96 @@ export async function showOrganizerPanel(
         
         const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...row2Components);
         controls = [row1, row2];
-    } else {
-        // Ended phase: no controls
+    }
+
+    return { embeds: [panelEmbed], components: controls };
+}
+
+/**
+ * Update a run organizer panel using the appropriate edit method based on handle type.
+ * This fixes the "Unknown Message" error by using the correct Discord API method for each panel type.
+ * 
+ * @param handle The panel handle (knows whether to use editReply, webhook.editMessage, or message.edit)
+ * @param runId The run ID
+ * @param guildId The guild ID
+ * @param confirmationMessage Optional confirmation message to show
+ */
+export async function updateRunOrganizerPanel(
+    handle: RunOrganizerPanelHandle,
+    runId: number,
+    guildId: string,
+    confirmationMessage?: string
+): Promise<void> {
+    try {
+        const content = await buildRunOrganizerPanelContent(runId, guildId, confirmationMessage);
+        
+        if (!content) {
+            // Run has ended - clear the panel
+            const endedContent = {
+                content: 'This run has ended.',
+                embeds: [],
+                components: []
+            };
+            
+            switch (handle.type) {
+                case 'interactionReply':
+                    await handle.interaction.editReply(endedContent);
+                    break;
+                case 'followup':
+                    await handle.webhook.editMessage(handle.messageId, endedContent);
+                    break;
+                case 'publicMessage':
+                    await handle.message.edit(endedContent);
+                    break;
+            }
+            return;
+        }
+
+        // Update the panel with fresh content using the correct edit method
+        const updateContent = {
+            embeds: content.embeds,
+            components: content.components
+        };
+
+        switch (handle.type) {
+            case 'interactionReply':
+                await handle.interaction.editReply(updateContent);
+                break;
+            case 'followup':
+                await handle.webhook.editMessage(handle.messageId, updateContent);
+                break;
+            case 'publicMessage':
+                await handle.message.edit(updateContent);
+                break;
+        }
+    } catch (err) {
+        // Panel might be deleted or ephemeral expired
+        // This is expected behavior - user may have closed the panel or it timed out
+        console.error('Failed to update run organizer panel:', err);
+    }
+}
+
+/**
+ * Internal function to build and show the organizer panel.
+ * Used by both initial access and confirmed access.
+ * @param confirmationMessage Optional message to show at the top of the panel (e.g., "✅ Party set to: USW3")
+ */
+export async function showOrganizerPanel(
+    btn: ButtonInteraction | ModalSubmitInteraction, 
+    runId: number, 
+    guildId: string, 
+    run: {
+        status: string;
+        dungeonLabel: string;
+        dungeonKey: string;
+        organizerId: string;
+        screenshotUrl?: string | null;
+        o3Stage?: string | null; // Track O3 progression: null -> 'closed' -> 'miniboss' -> 'third_room'
+    }, 
+    confirmationMessage?: string
+) {
+    // Check if run has ended before building content
+    if (run.status !== 'open' && run.status !== 'live') {
         const message = 'This run has ended.';
         if (btn.deferred || btn.replied) {
             await btn.editReply({ content: message, embeds: [], components: [] });
@@ -263,14 +338,32 @@ export async function showOrganizerPanel(
         return;
     }
 
+    // Build panel content
+    const content = await buildRunOrganizerPanelContent(runId, guildId, confirmationMessage);
+    
+    if (!content) {
+        const message = 'This run has ended.';
+        if (btn.deferred || btn.replied) {
+            await btn.editReply({ content: message, embeds: [], components: [] });
+        } else {
+            await btn.reply({ content: message, flags: MessageFlags.Ephemeral });
+        }
+        return;
+    }
+
+    // Send or update the panel
     if (btn.deferred || btn.replied) {
-        await btn.editReply({ embeds: [panelEmbed], components: controls });
+        await btn.editReply({ embeds: content.embeds, components: content.components });
     } else {
-        await btn.reply({ embeds: [panelEmbed], components: controls, flags: MessageFlags.Ephemeral });
+        await btn.reply({ embeds: content.embeds, components: content.components, flags: MessageFlags.Ephemeral });
     }
 
     // Register this organizer panel for auto-refresh on key reactions
-    registerOrganizerPanel(runId.toString(), btn.user.id, btn);
+    // Store as an interactionReply handle since this panel was created via interaction.reply()
+    registerOrganizerPanel(runId.toString(), btn.user.id, {
+        type: 'interactionReply',
+        interaction: btn
+    });
 
     // Log organizer panel access
     if (btn.guild) {
@@ -475,4 +568,49 @@ export async function refreshOrganizerPanel(
 
     // Show the updated panel with confirmation message
     await showOrganizerPanel(interaction, parseInt(runId), guildId, run, confirmationMessage);
+}
+
+/**
+ * Create and send a run organizer panel as a follow-up message (for auto-popup after run creation).
+ * This is a clean, interaction-agnostic approach that sends the panel and registers it for live updates.
+ * 
+ * @param interaction The command interaction (must have been replied to already)
+ * @param runId The run ID
+ * @param guildId The guild ID
+ */
+export async function sendRunOrganizerPanelAsFollowUp(
+    interaction: ChatInputCommandInteraction,
+    runId: number,
+    guildId: string
+): Promise<void> {
+    try {
+        // Build panel content
+        const content = await buildRunOrganizerPanelContent(runId, guildId);
+        
+        if (!content) {
+            // Run has ended or doesn't exist - silently fail
+            return;
+        }
+
+        // Send as ephemeral follow-up and get the Message object
+        const panelMessage = await interaction.followUp({
+            embeds: content.embeds,
+            components: content.components,
+            flags: MessageFlags.Ephemeral,
+            fetchReply: true // Get the message ID for later editing
+        }) as Message;
+
+        // Register this panel for live updates
+        // Store as a followup handle since this was created via interaction.followUp()
+        // This is the KEY fix: followup messages must be edited via webhook.editMessage(), not message.edit()
+        registerOrganizerPanel(runId.toString(), interaction.user.id, {
+            type: 'followup',
+            webhook: interaction.webhook,
+            messageId: panelMessage.id
+        });
+
+    } catch (err) {
+        // Silently fail - organizer can open panel manually if needed
+        console.error('Failed to send run organizer panel as follow-up:', err);
+    }
 }

@@ -25,6 +25,7 @@ import { getDefaultAutoEndMinutes } from '../../config/raid-config.js';
 import { addRunReactions } from '../../lib/utilities/run-reactions.js';
 import { checkOrganizerActiveActivities } from '../../lib/utilities/organizer-activity-checker.js';
 import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.js';
+import { sendRunOrganizerPanelAsFollowUp } from '../../interactions/buttons/raids/organizer-panel.js';
 
 const logger = createLogger('RunCreate');
 
@@ -245,70 +246,8 @@ export const runCreate: SlashCommand = {
             );
 
             // Show the organizer panel automatically as a followUp
-            try {
-                const panelEmbed = new EmbedBuilder()
-                    .setTitle(`Organizer Panel — ${d.dungeonName}`)
-                    .setDescription(`**Raiders Joined:** 0\n\nManage the run with the controls below.`)
-                    .setTimestamp(new Date());
-
-                // Starting phase controls
-                // Row 1: Start, Cancel
-                const orgRow1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`run:start:${runId}`)
-                        .setLabel('Start')
-                        .setStyle(ButtonStyle.Success),
-                    new ButtonBuilder()
-                        .setCustomId(`run:cancel:${runId}`)
-                        .setLabel('Cancel')
-                        .setStyle(ButtonStyle.Danger)
-                );
-
-                // Row 2: Set Party/Loc + Chain Amount (if not Oryx 3)
-                const orgRow2Components = [
-                    new ButtonBuilder()
-                        .setCustomId(`run:setpartyloc:${runId}`)
-                        .setLabel('Set Party/Loc')
-                        .setStyle(ButtonStyle.Secondary)
-                ];
-
-                if (d.codeName !== 'ORYX_3') {
-                    orgRow2Components.push(
-                        new ButtonBuilder()
-                            .setCustomId(`run:setchain:${runId}`)
-                            .setLabel('Chain Amount')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-                }
-
-                const orgRow2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...orgRow2Components);
-
-                const controls = [orgRow1, orgRow2];
-
-                // Row 3: Screenshot button for Oryx 3
-                if (d.codeName === 'ORYX_3') {
-                    const screenshotRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`run:screenshot:${runId}`)
-                            .setLabel('📸 Submit Screenshot')
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-                    controls.push(screenshotRow);
-                }
-
-                await interaction.followUp({
-                    embeds: [panelEmbed],
-                    components: controls,
-                    flags: MessageFlags.Ephemeral
-                });
-            } catch (err) {
-                logger.error('Failed to show organizer panel after run creation', {
-                    guildId: guild.id,
-                    runId: runId,
-                    error: err instanceof Error ? err.message : String(err)
-                });
-                // Don't fail the run creation if panel fails - organizer can open it manually
-            }
+            // This uses the shared helper which registers the panel for live updates
+            await sendRunOrganizerPanelAsFollowUp(interaction, runId, guild.id);
 
             // Add reactions to the run message based on dungeon configuration
             // This happens AFTER the user gets their response, so it doesn't delay the feedback

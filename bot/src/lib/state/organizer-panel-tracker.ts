@@ -1,22 +1,53 @@
-import { ButtonInteraction, ModalSubmitInteraction } from 'discord.js';
+import { ButtonInteraction, ModalSubmitInteraction, Message, InteractionWebhook } from 'discord.js';
 
 /**
- * Track active organizer panels (ephemeral messages) so they can be refreshed on key reactions
- * Key: `${runId}:${userId}` (runId and organizer's user ID)
- * Value: interaction object for editing the ephemeral message
+ * Handle type for run organizer panels, abstracting over different edit methods.
+ * 
+ * - `interactionReply`: Panel created via interaction.reply() - edit via interaction.editReply()
+ * - `followup`: Panel created via interaction.followUp() - edit via webhook.editMessage(messageId)
+ * - `publicMessage`: Panel in a regular channel - edit via message.edit()
  */
-const activeOrganizerPanels = new Map<string, ButtonInteraction | ModalSubmitInteraction>();
+export type RunOrganizerPanelHandle =
+    | {
+        type: 'interactionReply';
+        interaction: ButtonInteraction | ModalSubmitInteraction;
+    }
+    | {
+        type: 'followup';
+        webhook: InteractionWebhook;
+        messageId: string;
+    }
+    | {
+        type: 'publicMessage';
+        message: Message<true>;
+    };
 
 /**
- * Register an active organizer panel for auto-refresh on key reactions
+ * Track active organizer panels (ephemeral messages) so they can be refreshed on key reactions.
+ * 
+ * REFACTORED: Now stores RunOrganizerPanelHandle objects that know how to edit themselves.
+ * This allows ephemeral follow-ups (from auto-popup) and ephemeral replies (from buttons)
+ * to be edited correctly, fixing the Discord API "Unknown Message" error.
+ * 
+ * Key: `${runId}:${userId}` (runId and organizer's user ID)
+ * Value: handle that knows how to edit the panel (interaction.editReply, webhook.editMessage, or message.edit)
+ */
+const activeOrganizerPanels = new Map<string, RunOrganizerPanelHandle>();
+
+/**
+ * Register an active organizer panel for auto-refresh on key reactions.
+ * 
+ * @param runId The run ID
+ * @param userId The organizer's user ID
+ * @param handle The panel handle that knows how to edit itself
  */
 export function registerOrganizerPanel(
     runId: string,
     userId: string,
-    interaction: ButtonInteraction | ModalSubmitInteraction
+    handle: RunOrganizerPanelHandle
 ): void {
     const key = `${runId}:${userId}`;
-    activeOrganizerPanels.set(key, interaction);
+    activeOrganizerPanels.set(key, handle);
 }
 
 /**
@@ -31,26 +62,27 @@ export function unregisterOrganizerPanel(
 }
 
 /**
- * Get the active organizer panel interaction for a run and user
+ * Get the active organizer panel handle for a run and user
  */
 export function getOrganizerPanel(
     runId: string,
     userId: string
-): ButtonInteraction | ModalSubmitInteraction | undefined {
+): RunOrganizerPanelHandle | undefined {
     const key = `${runId}:${userId}`;
     return activeOrganizerPanels.get(key);
 }
 
 /**
- * Get all active organizer panels for a specific run (multiple organizers might have it open)
+ * Get all active organizer panel handles for a specific run (multiple organizers might have it open).
+ * Returns the handles that know how to edit themselves.
  */
-export function getAllOrganizerPanelsForRun(runId: string): Array<{ userId: string; interaction: ButtonInteraction | ModalSubmitInteraction }> {
-    const panels: Array<{ userId: string; interaction: ButtonInteraction | ModalSubmitInteraction }> = [];
+export function getAllOrganizerPanelsForRun(runId: string): Array<{ userId: string; handle: RunOrganizerPanelHandle }> {
+    const panels: Array<{ userId: string; handle: RunOrganizerPanelHandle }> = [];
     
-    for (const [key, interaction] of activeOrganizerPanels.entries()) {
+    for (const [key, handle] of activeOrganizerPanels.entries()) {
         const [storedRunId, userId] = key.split(':');
         if (storedRunId === runId) {
-            panels.push({ userId, interaction });
+            panels.push({ userId, handle });
         }
     }
     

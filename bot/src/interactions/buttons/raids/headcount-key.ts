@@ -10,7 +10,7 @@ import { getDungeonKeyEmoji } from '../../../lib/utilities/key-emoji-helpers.js'
 import { logKeyReaction } from '../../../lib/logging/raid-logger.js';
 import { getReactionInfo } from '../../../constants/emojis/MappedAfkCheckReactions.js';
 import { getActiveHeadcountPanels } from '../../../lib/state/headcount-panel-tracker.js';
-import { showHeadcountPanel } from './headcount-organizer-panel.js';
+import { showHeadcountPanel, updateHeadcountOrganizerPanel } from './headcount-organizer-panel.js';
 import { getOrganizerId, getParticipants } from '../../../lib/state/headcount-state.js';
 
 /**
@@ -282,14 +282,12 @@ export async function handleHeadcountKey(
             }
         }
         
-        const organizerId = getOrganizerId(embed);
-        if (organizerId) {
-            for (const panelInteraction of activePanels) {
-                try {
-                    await showHeadcountPanel(panelInteraction, msg, embed, organizerId, dungeonCodes);
-                } catch (e) {
-                    console.error('Failed to refresh headcount organizer panel:', e);
-                }
+        // Update all registered panel messages
+        for (const panelMessage of activePanels) {
+            try {
+                await updateHeadcountOrganizerPanel(panelMessage, msg, embed, dungeonCodes);
+            } catch (e) {
+                console.error('Failed to refresh headcount organizer panel:', e);
             }
         }
     }

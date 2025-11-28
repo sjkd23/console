@@ -50,18 +50,17 @@ function getEmojiDisplayForKeyType(keyType: string): string {
 }
 
 /**
- * Build and show the headcount organizer panel.
- * Used by button handler and auto-refresh system.
- * EXPORTED for use by headcount-key.ts to refresh panels when keys are reacted.
+ * Build the headcount organizer panel content (embed and components).
+ * This is a pure function that doesn't interact with Discord directly.
+ * 
+ * @returns Object with embed and components to display
  */
-export async function showHeadcountPanel(
-    interaction: ButtonInteraction | ChatInputCommandInteraction | ModalSubmitInteraction,
+function buildHeadcountOrganizerPanelContent(
     publicMsg: Message,
     embed: EmbedBuilder,
-    organizerId: string,
     dungeonCodes: string[]
-) {
-    // Get headcount state - pass message ID to retrieve from in-memory store
+): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+    // Get headcount state
     const participants = getParticipants(embed, publicMsg.id);
     const keyOffers = getKeyOffers(publicMsg.id);
 
@@ -121,7 +120,7 @@ export async function showHeadcountPanel(
 
     panelEmbed.setDescription(description);
 
-    // Build control buttons - pass the public message ID so handlers can find it
+    // Build control buttons
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
             .setCustomId(`headcount:end:${publicMsg.id}`)
@@ -134,26 +133,69 @@ export async function showHeadcountPanel(
             .setDisabled(dungeonCodes.length === 0)
     );
 
-    // Update the panel - works for both button interactions and followUp messages
+    return { embeds: [panelEmbed], components: [row1] };
+}
+
+/**
+ * Update a headcount organizer panel message with current data.
+ * This is interaction-agnostic - it just edits a Message object.
+ * 
+ * @param message The ephemeral message to update
+ * @param publicMsg The public headcount message
+ * @param embed The headcount embed
+ * @param dungeonCodes The dungeon codes for this headcount
+ */
+export async function updateHeadcountOrganizerPanel(
+    message: Message,
+    publicMsg: Message,
+    embed: EmbedBuilder,
+    dungeonCodes: string[]
+): Promise<void> {
+    try {
+        const content = buildHeadcountOrganizerPanelContent(publicMsg, embed, dungeonCodes);
+        await message.edit({
+            embeds: content.embeds,
+            components: content.components
+        });
+    } catch (err) {
+        // Message might be deleted or ephemeral expired
+        console.error('Failed to update headcount organizer panel:', err);
+    }
+}
+
+/**
+ * Build and show the headcount organizer panel.
+ * Used by button handler and auto-refresh system.
+ * EXPORTED for use by headcount-key.ts to refresh panels when keys are reacted.
+ */
+export async function showHeadcountPanel(
+    interaction: ButtonInteraction | ChatInputCommandInteraction | ModalSubmitInteraction,
+    publicMsg: Message,
+    embed: EmbedBuilder,
+    organizerId: string,
+    dungeonCodes: string[]
+) {
+    // Build panel content
+    const content = buildHeadcountOrganizerPanelContent(publicMsg, embed, dungeonCodes);
+
+    // Send or update the panel
+    let panelMessage: Message;
     if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-            embeds: [panelEmbed],
-            components: [row1]
-        });
+        panelMessage = await interaction.editReply({
+            embeds: content.embeds,
+            components: content.components
+        }) as Message;
     } else {
-        await interaction.reply({
-            embeds: [panelEmbed],
-            components: [row1],
-            flags: MessageFlags.Ephemeral
-        });
+        panelMessage = await interaction.reply({
+            embeds: content.embeds,
+            components: content.components,
+            flags: MessageFlags.Ephemeral,
+            fetchReply: true
+        }) as Message;
     }
     
     // Register this panel for auto-refresh when keys are reacted
-    if (interaction instanceof ButtonInteraction) {
-        registerHeadcountPanel(publicMsg.id, interaction);
-    } else if (interaction instanceof ChatInputCommandInteraction) {
-        registerHeadcountPanel(publicMsg.id, interaction);
-    }
+    registerHeadcountPanel(publicMsg.id, panelMessage);
 }
 
 export async function handleHeadcountOrganizerPanel(btn: ButtonInteraction, panelTimestamp: string) {
