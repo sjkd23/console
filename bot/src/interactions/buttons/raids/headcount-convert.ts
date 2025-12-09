@@ -33,6 +33,7 @@ import { registerOrganizerPanel } from '../../../lib/state/organizer-panel-track
 import { createRunRole } from '../../../lib/utilities/run-role-manager.js';
 import { createLogger } from '../../../lib/logging/logger.js';
 import { buildRunOrganizerPanelContent } from './organizer-panel.js';
+import { buildRunEmbed, buildRunButtons } from '../../../lib/utilities/run-panel-builder.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
     // CRITICAL: Wrap in mutex to prevent concurrent conversion
@@ -292,68 +293,18 @@ async function convertHeadcountToRun(
         }
     }
 
-    // Build the run embed
-    const runEmbed = new EmbedBuilder()
-        .setTitle(`⏳ Starting Soon: ${dungeon.dungeonName}`)
-        .setDescription(`Organizer: <@${organizerId}>`)
-        // Raiders count hidden from public panel - shown in organizer panel only
-        // .addFields(
-        //     { name: 'Raiders', value: '0', inline: false }
-        // )
-        .setTimestamp(new Date());
+    // Build the run embed and buttons using universal helpers
+    const runEmbed = buildRunEmbed({
+        dungeonData: dungeon,
+        organizerId: organizerId,
+        status: 'starting'
+    });
 
-    // Headcount Keys are now only shown in organizer panel, removed from public panel
-
-    // Add Keys field if the dungeon has key reactions (starting fresh for raid phase)
-    if (dungeon.keyReactions && dungeon.keyReactions.length > 0) {
-        runEmbed.addFields({ name: 'Keys', value: 'None', inline: false });
-    }
-
-    // Color & thumbnail
-    if (dungeon.dungeonColors?.length) runEmbed.setColor(dungeon.dungeonColors[0]);
-    if (dungeon.portalLink?.url) runEmbed.setThumbnail(dungeon.portalLink.url);
-
-    // Public buttons + organizer panel opener
-    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`run:join:${runId}`)
-            .setLabel('Join')
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId(`run:leave:${runId}`)
-            .setLabel('Leave')
-            .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-            .setCustomId(`run:org:${runId}`)
-            .setLabel('Organizer Panel')
-            .setStyle(ButtonStyle.Secondary)
-    );
-
-    // Key buttons based on dungeon type
-    const keyRows: ActionRowBuilder<ButtonBuilder>[] = [];
-    if (dungeon.keyReactions && dungeon.keyReactions.length > 0) {
-        const keyButtons: ButtonBuilder[] = [];
-        for (const keyReaction of dungeon.keyReactions) {
-            const reactionInfo = getReactionInfo(keyReaction.mapKey);
-            const button = new ButtonBuilder()
-                .setCustomId(`run:key:${runId}:${keyReaction.mapKey}`)
-                .setLabel(formatKeyLabel(keyReaction.mapKey))
-                .setStyle(ButtonStyle.Secondary);
-            
-            // Add emoji if available
-            if (reactionInfo?.emojiInfo?.identifier) {
-                button.setEmoji(reactionInfo.emojiInfo.identifier);
-            }
-            
-            keyButtons.push(button);
-        }
-
-        // Split into rows of up to 5 buttons
-        for (let i = 0; i < keyButtons.length; i += 5) {
-            const rowButtons = keyButtons.slice(i, i + 5);
-            keyRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...rowButtons));
-        }
-    }
+    const components = buildRunButtons({
+        runId: runId,
+        dungeonData: dungeon,
+        joinLocked: false
+    });
 
     // Save the headcount message ID before deletion (needed for clearing state)
     const headcountMessageId = publicMsg.id;
@@ -399,7 +350,7 @@ async function convertHeadcountToRun(
     const newRunMessage = await channel.send({
         content: runPanelContent,
         embeds: [runEmbed],
-        components: [row1, ...keyRows]
+        components: components
     });
 
     // Store the NEW message ID in the backend

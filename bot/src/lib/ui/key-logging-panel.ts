@@ -34,21 +34,28 @@ export function buildKeyLoggingPanel(
     embed: EmbedBuilder;
     components: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[];
 } {
+    // Build description with Oryx 3 clarification if applicable
+    let description = `The run has ended. Please log who popped the keys.\n\n`;
+    
+    // Add Oryx 3 specific note
+    if (state.dungeonKey === 'ORYX_3') {
+        description += `*Note: For logging purposes, runes and incs are counted as keys.*\n\n`;
+    }
+    
+    description += `**Total Keys Popped:** ${state.totalKeys}\n` +
+        `**Remaining to Log:** ${state.remainingKeys}\n\n` +
+        (state.logs.length > 0
+            ? `**Keys Logged:**\n${state.logs
+                  .map(
+                      (log) =>
+                          `• <@${log.userId}> — ${log.amount} key${log.amount > 1 ? 's' : ''} (+${Number(log.pointsAwarded).toFixed(2)} pts)`
+                  )
+                  .join('\n')}`
+            : '⏳ No keys logged yet.');
+
     const embed = new EmbedBuilder()
         .setTitle(`🔑 Log Keys — ${state.dungeonLabel}`)
-        .setDescription(
-            `The run has ended. Please log who popped the keys.\n\n` +
-            `**Total Keys Popped:** ${state.totalKeys}\n` +
-            `**Remaining to Log:** ${state.remainingKeys}\n\n` +
-            (state.logs.length > 0
-                ? `**Keys Logged:**\n${state.logs
-                      .map(
-                          (log) =>
-                              `• <@${log.userId}> — ${log.amount} key${log.amount > 1 ? 's' : ''} (+${Number(log.pointsAwarded).toFixed(2)} pts)`
-                      )
-                      .join('\n')}`
-                : '⏳ No keys logged yet.')
-        )
+        .setDescription(description)
         .setColor(0xfee75c) // Gold color for keys
         .setTimestamp(new Date());
 
@@ -92,16 +99,22 @@ export function buildKeyLoggingPanel(
         components.push(buttonRow);
     } else {
         // All keys logged, show completion message
-        embed.setDescription(
-            `✅ All keys have been logged!\n\n` +
-            `**Total Keys Popped:** ${state.totalKeys}\n\n` +
+        let completionDescription = `✅ All keys have been logged!\n\n`;
+        
+        // Add Oryx 3 specific note
+        if (state.dungeonKey === 'ORYX_3') {
+            completionDescription += `*Note: For logging purposes, runes and incs are counted as keys.*\n\n`;
+        }
+        
+        completionDescription += `**Total Keys Popped:** ${state.totalKeys}\n\n` +
             `**Keys Logged:**\n${state.logs
                 .map(
                     (log) =>
                         `• <@${log.userId}> — ${log.amount} key${log.amount > 1 ? 's' : ''} (+${log.pointsAwarded.toFixed(2)} pts)`
                 )
-                .join('\n')}`
-        );
+                .join('\n')}`;
+        
+        embed.setDescription(completionDescription);
 
         // Add close button
         const closeButton = new ActionRowBuilder<ButtonBuilder>().addComponents(

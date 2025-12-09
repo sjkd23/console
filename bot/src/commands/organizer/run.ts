@@ -26,6 +26,7 @@ import { addRunReactions } from '../../lib/utilities/run-reactions.js';
 import { checkOrganizerActiveActivities } from '../../lib/utilities/organizer-activity-checker.js';
 import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.js';
 import { sendRunOrganizerPanelAsFollowUp } from '../../interactions/buttons/raids/organizer-panel.js';
+import { buildRunEmbed, buildRunButtons } from '../../lib/utilities/run-panel-builder.js';
 
 const logger = createLogger('RunCreate');
 
@@ -130,78 +131,21 @@ export const runCreate: SlashCommand = {
                 roleId: role?.id // Store the created role ID
             }, { guildId: guild.id });
 
-            // Build the public embed (Starting/Lobby phase)
-            const embed = new EmbedBuilder()
-                .setTitle(`⏳ Starting Soon: ${d.dungeonName}`)
-                .setDescription(`Organizer: <@${interaction.user.id}>`)
-                // Raiders count hidden from public panel - shown in organizer panel only
-                // .addFields(
-                //     { name: 'Raiders', value: '0', inline: false }
-                // )
-                .setTimestamp(new Date());
+            // Build the public embed and buttons using universal helpers
+            const embed = buildRunEmbed({
+                dungeonData: d,
+                organizerId: interaction.user.id,
+                status: 'starting',
+                description: desc
+            });
 
-            // Add Keys field if the dungeon has key reactions
-            if (d.keyReactions && d.keyReactions.length > 0) {
-                embed.addFields({ name: 'Keys', value: 'None', inline: false });
-            }
+            const components = buildRunButtons({
+                runId: runId,
+                dungeonData: d,
+                joinLocked: false // New runs start with join unlocked
+            });
 
-            // Add Organizer Note field if description provided
-            if (desc) {
-                embed.addFields({
-                    name: 'Organizer Note',
-                    value: desc,
-                    inline: false
-                });
-            }
-
-            // Color & thumbnail if present
-            if (d.dungeonColors?.length) embed.setColor(d.dungeonColors[0]);
-            if (d.portalLink?.url) embed.setThumbnail(d.portalLink.url);
-
-            // Public buttons + organizer panel opener
-            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`run:join:${runId}`)
-                    .setLabel('Join')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId(`run:leave:${runId}`)
-                    .setLabel('Leave')
-                    .setStyle(ButtonStyle.Danger),
-                new ButtonBuilder()
-                    .setCustomId(`run:org:${runId}`)
-                    .setLabel('Organizer Panel')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-            // Key buttons based on dungeon type
-            const keyRows: ActionRowBuilder<ButtonBuilder>[] = [];
-            if (d.keyReactions && d.keyReactions.length > 0) {
-                // Group key buttons into rows of up to 5 buttons each
-                const keyButtons: ButtonBuilder[] = [];
-                for (const keyReaction of d.keyReactions) {
-                    const reactionInfo = getReactionInfo(keyReaction.mapKey);
-                    const button = new ButtonBuilder()
-                        .setCustomId(`run:key:${runId}:${keyReaction.mapKey}`)
-                        .setLabel(formatKeyLabel(keyReaction.mapKey))
-                        .setStyle(ButtonStyle.Secondary);
-                    
-                    // Add emoji if available
-                    if (reactionInfo?.emojiInfo?.identifier) {
-                        button.setEmoji(reactionInfo.emojiInfo.identifier);
-                    }
-                    
-                    keyButtons.push(button);
-                }
-
-                // Split into rows of up to 5 buttons
-                for (let i = 0; i < keyButtons.length; i += 5) {
-                    const rowButtons = keyButtons.slice(i, i + 5);
-                    keyRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...rowButtons));
-                }
-            }
-
-            // Build message content with party/location if provided
+            // Build message content with @here and dungeon role pings
             let content = '@here';
             
             // Check if there's a configured role ping for this dungeon
@@ -219,13 +163,11 @@ export const runCreate: SlashCommand = {
                 });
                 // Continue without custom role ping
             }
-            
-            // Don't show party/location in message content until run goes live
 
             const sent = await raidChannel.send({
                 content,
                 embeds: [embed],
-                components: [row, ...keyRows]
+                components: components
             });
 
             // NEW: tell backend the message id we just posted

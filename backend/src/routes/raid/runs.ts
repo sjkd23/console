@@ -736,10 +736,11 @@ export default async function runsRoutes(app: FastifyInstance) {
             chain_amount: number | null;
             screenshot_url: string | null;
             o3_stage: string | null;
+            join_locked: boolean;
         }>(
             `SELECT id, guild_id, channel_id, post_message_id, dungeon_key, dungeon_label, status, organizer_id,
                     started_at, ended_at, key_window_ends_at, party, location, description, role_id, ping_message_id,
-                    key_pop_count, chain_amount, screenshot_url, o3_stage
+                    key_pop_count, chain_amount, screenshot_url, o3_stage, join_locked
          FROM run
         WHERE id = $1::bigint`,
             [runId]
@@ -772,6 +773,7 @@ export default async function runsRoutes(app: FastifyInstance) {
             chainAmount: r.chain_amount,
             screenshotUrl: r.screenshot_url,
             o3Stage: r.o3_stage,
+            joinLocked: r.join_locked,
         });
     });
 
@@ -1211,6 +1213,74 @@ export default async function runsRoutes(app: FastifyInstance) {
         );
 
         return reply.send({ ok: true, location });
+    });
+
+    /**
+     * PATCH /runs/:id/join-locked
+     * Body: { actorId: Snowflake, actorRoles?: string[], joinLocked: boolean }
+     * Toggles the join_locked state for a run to prevent/allow users from joining.
+     * Authorization: actorId must match run.organizer_id OR have organizer role.
+     * Returns { ok: true, joinLocked: boolean }.
+     */
+    app.patch('/runs/:id/join-locked', async (req, reply) => {
+        const Params = z.object({ id: z.string().regex(/^\d+$/) });
+        const Body = z.object({
+            actorId: zSnowflake,
+            actorRoles: z.array(zSnowflake).optional(),
+            joinLocked: z.boolean(),
+        });
+
+        const p = Params.safeParse(req.params);
+        const b = Body.safeParse(req.body);
+        if (!p.success || !b.success) {
+            return Errors.validation(reply);
+        }
+        const runId = Number(p.data.id);
+        const { actorId, actorRoles, joinLocked } = b.data;
+
+        // Read current status AND organizer_id AND guild_id
+        const cur = await query<RunRow>(
+            `SELECT status, organizer_id, guild_id FROM run WHERE id = $1::bigint`,
+            [runId]
+        );
+        if (cur.rowCount === 0) return Errors.runNotFound(reply, runId);
+        const run = cur.rows[0];
+
+        // Enforce guild scoping
+        if (!enforceGuildScope(req, reply, run, runId)) return;
+
+        // Authorization: use centralized helper
+        try {
+            await authorizeRunActor(
+                run,
+                buildRunActorContext(actorId, actorRoles),
+                {
+                    allowOrganizer: true,
+                    allowOrganizerRole: true,
+                }
+            );
+        } catch (err: any) {
+            if (err.code === 'NOT_ORGANIZER') {
+                return Errors.notOrganizer(reply);
+            }
+            throw err;
+        }
+
+        // Don't allow updating ended runs
+        if (run.status === 'ended' || run.status === 'cancelled') {
+            return Errors.runClosed(reply);
+        }
+
+        // Update join_locked state
+        await query(
+            `UPDATE run SET join_locked = $2 WHERE id = $1::bigint`,
+            [runId, joinLocked]
+        );
+
+        logger.info({ runId, guildId: run.guild_id, actorId, joinLocked }, 
+            'Join locked state updated');
+
+        return reply.send({ ok: true, joinLocked });
     });
 
     /**

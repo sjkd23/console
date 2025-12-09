@@ -383,6 +383,18 @@ export async function getRaider(
     }
 }
 
+/** Check if an IGN is already verified in a guild (GET /raiders/check-ign/:guild_id/:ign) */
+export async function checkIgnExists(
+    guildId: string,
+    ign: string
+): Promise<{
+    exists: boolean;
+    user_id?: string;
+    is_main?: boolean;
+}> {
+    return getJSON(`/raiders/check-ign/${guildId}/${encodeURIComponent(ign)}`, { guildId });
+}
+
 /** Update a raider's IGN (PATCH /raiders/:user_id/ign) */
 export async function updateRaiderIGN(
     userId: string,

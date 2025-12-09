@@ -534,9 +534,14 @@ export default async function quotaRoutes(app: FastifyInstance) {
             actor_user_id: zSnowflake,
             actor_roles: z.array(zSnowflake).optional(),
             actor_has_admin_permission: z.boolean().optional(),
-            points: z.number().min(0).refine(
-                (val) => Number.isFinite(val) && Math.round(val * 100) === val * 100,
-                { message: 'Points must have at most 2 decimal places' }
+            points: z.number().refine(
+                (val) => {
+                    // Allow negative values (for deletion) without decimal check
+                    if (val < 0) return true;
+                    // For non-negative values, check max 2 decimal places
+                    return Number.isFinite(val) && Math.round(val * 100) === val * 100;
+                },
+                { message: 'Points must have at most 2 decimal places (use negative to remove override)' }
             ),
         });
 
@@ -563,6 +568,13 @@ export default async function quotaRoutes(app: FastifyInstance) {
         }
 
         try {
+            // If points <= 0, delete the override instead of setting it
+            if (points <= 0) {
+                await deleteDungeonOverride(guild_id, role_id, dungeon_key);
+                const overrides = await getDungeonOverrides(guild_id, role_id);
+                return reply.send({ dungeon_overrides: overrides });
+            }
+
             // Ensure quota_role_config exists before setting dungeon override
             let config = await getQuotaRoleConfig(guild_id, role_id);
             if (!config) {

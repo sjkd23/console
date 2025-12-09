@@ -12,6 +12,7 @@ import { clearRunReactions } from '../../../lib/utilities/run-reactions.js';
 import { updateQuotaPanelsForUser } from '../../../lib/ui/quota-panel.js';
 import { refreshOrganizerPanel } from './organizer-panel.js';
 import { clearOrganizerPanelsForRun } from '../../../lib/state/organizer-panel-tracker.js';
+import { transitionRunEmbed } from '../../../lib/utilities/run-panel-builder.js';
 
 const logger = createLogger('RunStatus');
 
@@ -230,7 +231,7 @@ async function handleStatusInternal(
     // 3) Apply UI changes
     if (status === 'live') {
         // Transition to Live: update embed with LIVE badge and started time
-        const liveEmbed = buildLiveEmbed(embeds[0], run, btn);
+        const liveEmbed = transitionRunEmbed(embeds[0], 'live', run);
 
         // Update the public message content with party/location
         let content = '@here';
@@ -266,73 +267,9 @@ async function handleStatusInternal(
             console.error('Failed to log status change to raid-log:', e);
         }
 
-        // Update the organizer panel to show Live buttons
-        const firstEmbed = btn.message.embeds?.[0];
-        const dungeonTitle = firstEmbed?.title?.replace('Organizer Panel — ', '') ?? run.dungeonLabel;
-
-        const panelEmbed = new EmbedBuilder()
-            .setTitle(`Organizer Panel — ${dungeonTitle}`)
-            .setDescription('✅ **Run is LIVE!**\n\nManage the raid below.')
-            .setTimestamp(new Date())
-            .setColor(0x00ff00); // Green color for live
-
-        // For Oryx 3, use "Realm Score %" instead of "Key popped"
-        const actionButton = run.dungeonKey === 'ORYX_3'
-            ? new ButtonBuilder()
-                .setCustomId(`run:realmscore:${runId}`)
-                .setLabel('Realm Score %')
-                .setStyle(ButtonStyle.Success)
-            : (() => {
-                // Build the "Key popped" button with the appropriate emoji
-                const keyPoppedButton = new ButtonBuilder()
-                    .setCustomId(`run:keypop:${runId}`)
-                    .setLabel('Key popped')
-                    .setStyle(ButtonStyle.Success);
-
-                // Add emoji from the dungeon's first key reaction if available
-                const keyEmojiIdentifier = getDungeonKeyEmojiIdentifier(run.dungeonKey);
-                if (keyEmojiIdentifier) {
-                    keyPoppedButton.setEmoji(keyEmojiIdentifier);
-                }
-
-                return keyPoppedButton;
-            })();
-
-        const liveControls = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`run:end:${runId}`)
-                .setLabel('End Run')
-                .setStyle(ButtonStyle.Danger),
-            actionButton
-        );
-
-        // For Oryx 3, don't show Chain Amount button
-        const liveControls2Components = [
-            new ButtonBuilder()
-                .setCustomId(`run:setpartyloc:${runId}`)
-                .setLabel('Set Party/Loc')
-                .setStyle(ButtonStyle.Secondary)
-        ];
-
-        if (run.dungeonKey !== 'ORYX_3') {
-            liveControls2Components.push(
-                new ButtonBuilder()
-                    .setCustomId(`run:setchain:${runId}`)
-                    .setLabel('Chain Amount')
-                    .setStyle(ButtonStyle.Secondary)
-            );
-        }
-
-        liveControls2Components.push(
-            new ButtonBuilder()
-                .setCustomId(`run:cancel:${runId}`)
-                .setLabel('Cancel Run')
-                .setStyle(ButtonStyle.Danger)
-        );
-
-        const liveControls2 = new ActionRowBuilder<ButtonBuilder>().addComponents(...liveControls2Components);
-
-        await btn.editReply({ embeds: [panelEmbed], components: [liveControls, liveControls2] });
+        // Update the organizer panel to show Live buttons using the shared helper
+        // This ensures consistency and includes all buttons (including lock/unlock join)
+        await refreshOrganizerPanel(btn, runId, '✅ **Run is LIVE!**');
     } else {
         // status === 'ended' or 'cancelled'
         const endLabel = status === 'cancelled' ? 'Cancelled' : 'Ended';
@@ -366,7 +303,7 @@ async function handleStatusInternal(
         }
 
         // Build ended embed
-        const endedEmbed = buildEndedEmbed(embeds[0], run, endLabel);
+        const endedEmbed = transitionRunEmbed(embeds[0], status === 'cancelled' ? 'cancelled' : 'ended', run);
 
         // Change PUBLIC MESSAGE content and remove buttons
         await pubMsg.edit({ content: endLabel, embeds: [endedEmbed, ...embeds.slice(1)], components: [] });
@@ -430,10 +367,9 @@ async function handleStatusInternal(
         }
 
         // If run ended, show key logging panel
-        // Calculate total keys based on key reactions:
-        // - For dungeons with multiple key types (e.g., Oryx 3): count unique users across ALL key types
-        // - For regular dungeons: use key_pop_count (number of times "Key Popped" was clicked)
-        // - Always log at least 1 key (the organizer's key to start the run)
+        // Calculate total keys based on dungeon configuration:
+        // - For dungeons with multiple key types (e.g., Oryx 3 with 4 runes): use keyReactions.length
+        // - For regular dungeons: use key_pop_count (number of times "Key Popped" was clicked, defaults to 1)
         if (status === 'ended') {
             let totalKeys = Math.max(1, run.keyPopCount);
             
@@ -442,32 +378,10 @@ async function handleStatusInternal(
                 .then(m => m.dungeonByCode[run.dungeonKey]);
             
             if (dungeonData?.keyReactions && dungeonData.keyReactions.length > 1) {
-                // For dungeons with multiple key types (like Oryx 3), fetch ALL key reactions
-                // and count the TOTAL number of unique key clicks across all types
-                try {
-                    const keyReactionData = await getJSON<{ keyUsers: Record<string, string[]> }>(
-                        `/runs/${runId}/key-reaction-users`,
-                        { guildId }
-                    );
-                    
-                    // Count total unique key reactions across all key types
-                    let totalKeyReactions = 0;
-                    for (const userIds of Object.values(keyReactionData.keyUsers)) {
-                        totalKeyReactions += userIds.length;
-                    }
-                    
-                    // Use the total key reactions if greater than 1
-                    if (totalKeyReactions > 0) {
-                        totalKeys = totalKeyReactions;
-                    }
-                } catch (err) {
-                    logger.warn('Failed to fetch key reactions for multi-key dungeon', {
-                        runId,
-                        dungeonKey: run.dungeonKey,
-                        error: err
-                    });
-                    // Fall back to key_pop_count
-                }
+                // For dungeons with multiple key types (like Oryx 3 with 4 runes),
+                // use the number of key types defined in the dungeon configuration
+                // This ensures the organizer logs all runes regardless of button clicks
+                totalKeys = dungeonData.keyReactions.length;
             }
             
             logger.info('Run ended, showing key logging panel', {
@@ -499,197 +413,4 @@ async function handleStatusInternal(
 
         await btn.editReply({ embeds: [closureEmbed], components: [] });
     }
-}
-
-/**
- * Build the Live phase embed with optional key window line.
- */
-function buildLiveEmbed(
-    original: any,
-    run: {
-        dungeonKey: string;
-        dungeonLabel: string;
-        organizerId: string;
-        startedAt: string | null;
-        keyWindowEndsAt: string | null;
-        party: string | null;
-        location: string | null;
-        description: string | null;
-        keyPopCount: number;
-        chainAmount: number | null;
-    },
-    btn: ButtonInteraction
-): EmbedBuilder {
-    const embed = EmbedBuilder.from(original);
-
-    // Set title with LIVE badge and optional chain tracking (not for Oryx 3)
-    let chainText = '';
-    if (run.dungeonKey !== 'ORYX_3' && run.keyPopCount > 0) {
-        if (run.chainAmount && run.keyPopCount <= run.chainAmount) {
-            // Show Chain X/Y only if chain amount is set AND not exceeded
-            chainText = ` | Chain ${run.keyPopCount}/${run.chainAmount}`;
-        } else {
-            // Show Chain X if no chain amount set OR if count exceeded amount
-            chainText = ` | Chain ${run.keyPopCount}`;
-        }
-    }
-    embed.setTitle(`🟢 LIVE: ${run.dungeonLabel}${chainText}`);
-
-    // Build description with organizer and key window if active
-    let desc = `Organizer: <@${run.organizerId}>`;
-
-    // Add key window if end time is in the future
-    if (run.keyWindowEndsAt) {
-        const endsUnix = Math.floor(new Date(run.keyWindowEndsAt).getTime() / 1000);
-        const now = Math.floor(Date.now() / 1000);
-
-        if (endsUnix > now) {
-            // Get the dungeon-specific key emoji
-            const keyEmoji = getDungeonKeyEmoji(run.dungeonKey);
-
-            desc += `\n\n${keyEmoji} **Key popped**\nParty join window closes <t:${endsUnix}:R>`;
-        }
-    }
-
-    embed.setDescription(desc);
-
-    // Keep existing fields (Raiders, Keys, etc.) but remove Party/Location and Classes
-    const data = embed.toJSON();
-    const fields = [...(data.fields ?? [])];
-
-    // Merge separate key fields into a single Keys field when going live
-    const headcountKeysIdx = fields.findIndex(f => (f.name ?? '').includes('Headcount Keys'));
-    const raidKeysIdx = fields.findIndex(f => (f.name ?? '').includes('Raid Keys'));
-    const keysIdx = fields.findIndex(f => (f.name ?? '') === 'Keys');
-
-    if (headcountKeysIdx >= 0 || raidKeysIdx >= 0) {
-        // We have separate key fields - merge them into one "Keys" field
-        const mergedKeyLines: string[] = [];
-
-        // Add headcount keys if present
-        if (headcountKeysIdx >= 0) {
-            const headcountValue = fields[headcountKeysIdx].value;
-            if (headcountValue && headcountValue !== 'None') {
-                mergedKeyLines.push(headcountValue);
-            }
-        }
-
-        // Add raid keys if present
-        if (raidKeysIdx >= 0) {
-            const raidValue = fields[raidKeysIdx].value;
-            if (raidValue && raidValue !== 'None') {
-                mergedKeyLines.push(raidValue);
-            }
-        }
-
-        // Determine final value
-        const finalValue = mergedKeyLines.length > 0 
-            ? mergedKeyLines.join('\n') 
-            : 'None';
-
-        // Remove both separate key fields if they exist
-        const indicesToRemove = [headcountKeysIdx, raidKeysIdx].filter(i => i >= 0).sort((a, b) => b - a);
-        for (const idx of indicesToRemove) {
-            fields.splice(idx, 1);
-        }
-
-        // Add or update the single "Keys" field
-        const newKeysIdx = fields.findIndex(f => (f.name ?? '') === 'Keys');
-        if (newKeysIdx >= 0) {
-            fields[newKeysIdx] = { ...fields[newKeysIdx], value: finalValue };
-        } else {
-            // Insert Keys field at the beginning of the field list
-            fields.unshift({ name: 'Keys', value: finalValue, inline: false });
-        }
-    }
-
-    // Remove Party field if present
-    const partyIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'party');
-    if (partyIdx >= 0) {
-        fields.splice(partyIdx, 1);
-    }
-
-    // Remove Location field if present
-    const locIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'location');
-    if (locIdx >= 0) {
-        fields.splice(locIdx, 1);
-    }
-
-    // Remove Classes field if present
-    const classIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'classes');
-    if (classIdx >= 0) {
-        fields.splice(classIdx, 1);
-    }
-
-    // Update or add Organizer Note field
-    if (run.description) {
-        const noteIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'organizer note');
-        if (noteIdx >= 0) {
-            fields[noteIdx] = { ...fields[noteIdx], value: run.description };
-        }
-    }
-
-    return embed.setFields(fields as any);
-}
-
-/**
- * Build the Ended phase embed.
- */
-function buildEndedEmbed(
-    original: any,
-    run: {
-        dungeonKey: string;
-        dungeonLabel: string;
-        organizerId: string;
-        startedAt: string | null;
-        endedAt: string | null;
-        keyPopCount: number;
-        chainAmount: number | null;
-    },
-    label: string
-): EmbedBuilder {
-    const embed = EmbedBuilder.from(original);
-
-    // Set title with appropriate icon
-    const icon = label === 'Cancelled' ? '❌' : '✅';
-    embed.setTitle(`${icon} ${label}: ${run.dungeonLabel}`);
-
-    // Build description with organizer and timestamps
-    let desc = `Organizer: <@${run.organizerId}>`;
-
-    if (run.endedAt) {
-        const endedUnix = Math.floor(new Date(run.endedAt).getTime() / 1000);
-        desc += `\n${label} <t:${endedUnix}:R>`;
-    }
-
-    // Calculate duration if we have both timestamps
-    if (run.startedAt && run.endedAt) {
-        const durationMs = new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime();
-        const durationMin = Math.floor(durationMs / 60000);
-        const durationSec = Math.floor((durationMs % 60000) / 1000);
-        desc += `\nDuration: ${durationMin}m ${durationSec}s`;
-    }
-
-    // Add final chain count if chain tracking was enabled (not for Oryx 3)
-    if (run.dungeonKey !== 'ORYX_3' && run.keyPopCount > 0) {
-        if (run.chainAmount && run.keyPopCount <= run.chainAmount) {
-            desc += `\n\n**Chains Completed:** ${run.keyPopCount}/${run.chainAmount}`;
-        } else {
-            desc += `\n\n**Chains Completed:** ${run.keyPopCount}`;
-        }
-    }
-
-    embed.setDescription(desc);
-
-    // Keep Raiders field from original
-    const data = embed.toJSON();
-    const fields = [...(data.fields ?? [])];
-
-    // Keep only Keys field, remove others (Raiders is now private to organizer panel)
-    const keepFields = fields.filter(f => {
-        const name = (f.name ?? '').toLowerCase();
-        return name === 'keys';
-    });
-
-    return embed.setFields(keepFields as any);
 }

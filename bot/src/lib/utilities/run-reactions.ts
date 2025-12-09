@@ -16,8 +16,18 @@ const logger = createLogger('RunReactions');
  * 
  * @param message - The Discord message to add reactions to
  * @param dungeonKey - The dungeon code name (e.g., "FUNGAL_CAVERN")
+ * 
+ * NOTE: Currently disabled - reactions are not added to run messages.
  */
 export async function addRunReactions(message: Message, dungeonKey: string): Promise<void> {
+    // Reactions disabled - return early without adding any reactions
+    logger.debug('Reactions disabled for run message', {
+        dungeonKey,
+        messageId: message.id
+    });
+    return;
+
+    // eslint-disable-next-line no-unreachable
     const dungeon = dungeonByCode[dungeonKey];
     if (!dungeon) {
         logger.warn('Cannot add reactions - unknown dungeon', { dungeonKey });

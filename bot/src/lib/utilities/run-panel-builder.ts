@@ -1,0 +1,397 @@
+/**
+ * Universal run panel builder utilities
+ * Provides DRY helpers for creating consistent run embeds and button components
+ * across all run creation and conversion scenarios.
+ */
+
+import {
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    APIEmbedField
+} from 'discord.js';
+import { DungeonInfo } from '../../constants/dungeons/dungeon-types.js';
+import { getReactionInfo } from '../../constants/emojis/MappedAfkCheckReactions.js';
+import { formatKeyLabel, getDungeonKeyEmoji } from './key-emoji-helpers.js';
+
+// ============================================================================
+// INTERFACES
+// ============================================================================
+
+export interface RunEmbedOptions {
+    dungeonData: DungeonInfo;
+    organizerId: string;
+    status: 'starting' | 'live' | 'ended' | 'cancelled';
+    description?: string;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    keyWindowEndsAt?: string | null;
+    keyPopCount?: number;
+    chainAmount?: number | null;
+}
+
+export interface RunButtonsOptions {
+    runId: number | string;
+    dungeonData: DungeonInfo;
+    joinLocked?: boolean;
+}
+
+export interface KeyButtonsResult {
+    keyRows: ActionRowBuilder<ButtonBuilder>[];
+}
+
+// ============================================================================
+// PUBLIC EMBED BUILDERS
+// ============================================================================
+
+/**
+ * Build a run embed for any status (starting, live, ended, cancelled)
+ * This is the universal function that handles all run embed creation
+ */
+export function buildRunEmbed(options: RunEmbedOptions): EmbedBuilder {
+    const { dungeonData, organizerId, status, description } = options;
+
+    const embed = new EmbedBuilder()
+        .setTimestamp(new Date());
+
+    // Apply dungeon theming
+    if (dungeonData.dungeonColors?.length) {
+        embed.setColor(dungeonData.dungeonColors[0]);
+    }
+    if (dungeonData.portalLink?.url) {
+        embed.setThumbnail(dungeonData.portalLink.url);
+    }
+
+    // Build title based on status
+    switch (status) {
+        case 'starting':
+            embed.setTitle(`⏳ Starting Soon: ${dungeonData.dungeonName}`);
+            break;
+        case 'live':
+            embed.setTitle(buildLiveTitle(dungeonData, options.keyPopCount ?? 0, options.chainAmount ?? null));
+            break;
+        case 'ended':
+            embed.setTitle(`✅ Ended: ${dungeonData.dungeonName}`);
+            break;
+        case 'cancelled':
+            embed.setTitle(`❌ Cancelled: ${dungeonData.dungeonName}`);
+            break;
+    }
+
+    // Build description
+    embed.setDescription(buildDescription(
+        organizerId,
+        status,
+        options.keyWindowEndsAt,
+        options.endedAt,
+        options.startedAt,
+        dungeonData.codeName
+    ));
+
+    // Add fields
+    const fields = buildEmbedFields(status, dungeonData, description);
+    if (fields.length > 0) {
+        embed.addFields(fields);
+    }
+
+    return embed;
+}
+
+/**
+ * Transition an existing embed to a new status (e.g., starting -> live -> ended)
+ * Preserves existing data while updating status-specific fields
+ */
+export function transitionRunEmbed(
+    originalEmbed: any,
+    toStatus: 'live' | 'ended' | 'cancelled',
+    options: {
+        dungeonKey: string;
+        dungeonLabel: string;
+        organizerId: string;
+        startedAt?: string | null;
+        endedAt?: string | null;
+        keyWindowEndsAt?: string | null;
+        keyPopCount?: number;
+        chainAmount?: number | null;
+        description?: string | null;
+    }
+): EmbedBuilder {
+    const embed = EmbedBuilder.from(originalEmbed);
+
+    // Update title
+    switch (toStatus) {
+        case 'live':
+            embed.setTitle(buildLiveTitle(
+                { codeName: options.dungeonKey, dungeonName: options.dungeonLabel } as DungeonInfo,
+                options.keyPopCount ?? 0,
+                options.chainAmount ?? null
+            ));
+            break;
+        case 'ended':
+            embed.setTitle(`✅ Ended: ${options.dungeonLabel}`);
+            break;
+        case 'cancelled':
+            embed.setTitle(`❌ Cancelled: ${options.dungeonLabel}`);
+            break;
+    }
+
+    // Update description
+    embed.setDescription(buildDescription(
+        options.organizerId,
+        toStatus,
+        options.keyWindowEndsAt,
+        options.endedAt,
+        options.startedAt,
+        options.dungeonKey
+    ));
+
+    // Update or clean up fields based on transition
+    const data = embed.toJSON();
+    const fields = [...(data.fields ?? [])];
+
+    if (toStatus === 'live') {
+        // Merge separate key fields into one
+        mergeKeyFields(fields);
+        // Remove party, location, classes (shown in message content instead)
+        removeFieldsByName(fields, ['party', 'location', 'classes']);
+    } else if (toStatus === 'ended' || toStatus === 'cancelled') {
+        // Add duration field if we have timestamps
+        if (options.startedAt && options.endedAt) {
+            addDurationField(fields, options.startedAt, options.endedAt);
+        }
+        // Add final chain count for non-O3 dungeons
+        if (options.dungeonKey !== 'ORYX_3' && (options.keyPopCount ?? 0) > 0) {
+            addFinalChainField(fields, options.keyPopCount!, options.chainAmount ?? null);
+        }
+    }
+
+    return embed.setFields(fields as any);
+}
+
+// ============================================================================
+// BUTTON BUILDERS
+// ============================================================================
+
+/**
+ * Build the main action row (Join, Leave, Organizer Panel)
+ */
+export function buildMainActionRow(runId: number | string, joinLocked: boolean = false): ActionRowBuilder<ButtonBuilder> {
+    return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`run:join:${runId}`)
+            .setLabel('Join')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(joinLocked),
+        new ButtonBuilder()
+            .setCustomId(`run:leave:${runId}`)
+            .setLabel('Leave')
+            .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+            .setCustomId(`run:org:${runId}`)
+            .setLabel('Organizer Panel')
+            .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+/**
+ * Build key reaction button rows for a dungeon
+ * Returns empty array if dungeon has no key reactions
+ */
+export function buildKeyButtonRows(runId: number | string, dungeonData: DungeonInfo): ActionRowBuilder<ButtonBuilder>[] {
+    if (!dungeonData.keyReactions || dungeonData.keyReactions.length === 0) {
+        return [];
+    }
+
+    const keyButtons: ButtonBuilder[] = [];
+
+    for (const keyReaction of dungeonData.keyReactions) {
+        const reactionInfo = getReactionInfo(keyReaction.mapKey);
+        const button = new ButtonBuilder()
+            .setCustomId(`run:key:${runId}:${keyReaction.mapKey}`)
+            .setLabel(formatKeyLabel(keyReaction.mapKey))
+            .setStyle(ButtonStyle.Secondary);
+
+        // Add emoji if available
+        if (reactionInfo?.emojiInfo?.identifier) {
+            button.setEmoji(reactionInfo.emojiInfo.identifier);
+        }
+
+        keyButtons.push(button);
+    }
+
+    // Split into rows of up to 5 buttons each
+    const keyRows: ActionRowBuilder<ButtonBuilder>[] = [];
+    for (let i = 0; i < keyButtons.length; i += 5) {
+        const rowButtons = keyButtons.slice(i, i + 5);
+        keyRows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...rowButtons));
+    }
+
+    return keyRows;
+}
+
+/**
+ * Build all button components for a run panel
+ * Returns main action row + key button rows
+ */
+export function buildRunButtons(options: RunButtonsOptions): ActionRowBuilder<ButtonBuilder>[] {
+    const { runId, dungeonData, joinLocked = false } = options;
+
+    const mainRow = buildMainActionRow(runId, joinLocked);
+    const keyRows = buildKeyButtonRows(runId, dungeonData);
+
+    return [mainRow, ...keyRows];
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function buildLiveTitle(dungeonData: { codeName: string; dungeonName: string }, keyPopCount: number, chainAmount: number | null): string {
+    let chainText = '';
+
+    // Add chain tracking for non-O3 dungeons
+    if (dungeonData.codeName !== 'ORYX_3' && keyPopCount > 0) {
+        if (chainAmount && keyPopCount <= chainAmount) {
+            chainText = ` | Chain ${keyPopCount}/${chainAmount}`;
+        } else {
+            chainText = ` | Chain ${keyPopCount}`;
+        }
+    }
+
+    return `🟢 LIVE: ${dungeonData.dungeonName}${chainText}`;
+}
+
+function buildDescription(
+    organizerId: string,
+    status: 'starting' | 'live' | 'ended' | 'cancelled',
+    keyWindowEndsAt?: string | null,
+    endedAt?: string | null,
+    startedAt?: string | null,
+    dungeonKey?: string
+): string {
+    let desc = `Organizer: <@${organizerId}>`;
+
+    // Add key window for live runs
+    if (status === 'live' && keyWindowEndsAt) {
+        const endsUnix = Math.floor(new Date(keyWindowEndsAt).getTime() / 1000);
+        const now = Math.floor(Date.now() / 1000);
+
+        if (endsUnix > now) {
+            const keyEmoji = dungeonKey ? getDungeonKeyEmoji(dungeonKey) : '🔑';
+            desc += `\n\n${keyEmoji} **Key popped**\nParty join window closes <t:${endsUnix}:R>`;
+        }
+    }
+
+    // Add end timestamp for ended/cancelled runs
+    if ((status === 'ended' || status === 'cancelled') && endedAt) {
+        const endedUnix = Math.floor(new Date(endedAt).getTime() / 1000);
+        const statusLabel = status === 'cancelled' ? 'Cancelled' : 'Ended';
+        desc += `\n${statusLabel} <t:${endedUnix}:R>`;
+    }
+
+    return desc;
+}
+
+function buildEmbedFields(status: 'starting' | 'live' | 'ended' | 'cancelled', dungeonData: DungeonInfo, description?: string): APIEmbedField[] {
+    const fields: APIEmbedField[] = [];
+
+    // Add Keys field for starting/live runs with key reactions
+    if ((status === 'starting' || status === 'live') && dungeonData.keyReactions && dungeonData.keyReactions.length > 0) {
+        fields.push({ name: 'Keys', value: 'None', inline: false });
+    }
+
+    // Add Organizer Note if description provided
+    if (description) {
+        fields.push({
+            name: 'Organizer Note',
+            value: description,
+            inline: false
+        });
+    }
+
+    return fields;
+}
+
+function mergeKeyFields(fields: APIEmbedField[]): void {
+    const headcountKeysIdx = fields.findIndex(f => (f.name ?? '').includes('Headcount Keys'));
+    const raidKeysIdx = fields.findIndex(f => (f.name ?? '').includes('Raid Keys'));
+
+    if (headcountKeysIdx >= 0 || raidKeysIdx >= 0) {
+        const mergedKeyLines: string[] = [];
+
+        if (headcountKeysIdx >= 0) {
+            const value = fields[headcountKeysIdx].value;
+            if (value && value !== 'None') {
+                mergedKeyLines.push(value);
+            }
+        }
+
+        if (raidKeysIdx >= 0) {
+            const value = fields[raidKeysIdx].value;
+            if (value && value !== 'None') {
+                mergedKeyLines.push(value);
+            }
+        }
+
+        const finalValue = mergedKeyLines.length > 0 ? mergedKeyLines.join('\n') : 'None';
+
+        // Remove separate key fields
+        const indicesToRemove = [headcountKeysIdx, raidKeysIdx]
+            .filter(i => i >= 0)
+            .sort((a, b) => b - a);
+        for (const idx of indicesToRemove) {
+            fields.splice(idx, 1);
+        }
+
+        // Add merged Keys field
+        const keysIdx = fields.findIndex(f => (f.name ?? '') === 'Keys');
+        if (keysIdx >= 0) {
+            fields[keysIdx] = { ...fields[keysIdx], value: finalValue };
+        } else {
+            fields.unshift({ name: 'Keys', value: finalValue, inline: false });
+        }
+    }
+}
+
+function removeFieldsByName(fields: APIEmbedField[], names: string[]): void {
+    const lowerNames = names.map(n => n.toLowerCase());
+    for (let i = fields.length - 1; i >= 0; i--) {
+        if (lowerNames.includes((fields[i].name ?? '').toLowerCase())) {
+            fields.splice(i, 1);
+        }
+    }
+}
+
+function addDurationField(fields: APIEmbedField[], startedAt: string, endedAt: string): void {
+    const durationMs = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+    const durationMin = Math.floor(durationMs / 60000);
+    const durationSec = Math.floor((durationMs % 60000) / 1000);
+    
+    // Remove existing duration field if present
+    const existingIdx = fields.findIndex(f => (f.name ?? '').toLowerCase() === 'duration');
+    if (existingIdx >= 0) {
+        fields.splice(existingIdx, 1);
+    }
+    
+    // Add duration after description in the embed
+    fields.push({
+        name: 'Duration',
+        value: `${durationMin}m ${durationSec}s`,
+        inline: false
+    });
+}
+
+function addFinalChainField(fields: APIEmbedField[], keyPopCount: number, chainAmount: number | null): void {
+    let chainText = `Chain ${keyPopCount}`;
+    if (chainAmount && keyPopCount <= chainAmount) {
+        chainText = `Chain ${keyPopCount}/${chainAmount}`;
+    }
+    
+    // Add as a field (could also be in description)
+    fields.push({
+        name: 'Final Chain',
+        value: chainText,
+        inline: true
+    });
+}

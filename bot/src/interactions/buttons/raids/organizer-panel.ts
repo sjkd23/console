@@ -36,6 +36,7 @@ export async function buildRunOrganizerPanelContent(
         organizerId: string;
         screenshotUrl?: string | null;
         o3Stage?: string | null;
+        joinLocked?: boolean;
     }>(`/runs/${runId}`, { guildId }).catch(() => null);
 
     if (!run) {
@@ -132,6 +133,10 @@ export async function buildRunOrganizerPanelContent(
         
         const row2Components = [
             new ButtonBuilder()
+                .setCustomId(`run:lockjoin:${runId}`)
+                .setLabel(run.joinLocked ? '🔓 Unlock Join' : '🔒 Lock Join')
+                .setStyle(run.joinLocked ? ButtonStyle.Success : ButtonStyle.Secondary),
+            new ButtonBuilder()
                 .setCustomId(`run:setpartyloc:${runId}`)
                 .setLabel('Set Party/Loc')
                 .setStyle(ButtonStyle.Secondary)
@@ -206,6 +211,14 @@ export async function buildRunOrganizerPanelContent(
             
             actionButtons.push(keyPoppedButton);
         }
+
+        // Add Lock/Unlock Join button to the action buttons
+        actionButtons.push(
+            new ButtonBuilder()
+                .setCustomId(`run:lockjoin:${runId}`)
+                .setLabel(run.joinLocked ? '🔓 Unlock Join' : '🔒 Lock Join')
+                .setStyle(run.joinLocked ? ButtonStyle.Success : ButtonStyle.Secondary)
+        );
 
         const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder()

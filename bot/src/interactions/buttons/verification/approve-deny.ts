@@ -142,16 +142,25 @@ async function handleVerificationApproveInternal(interaction: ButtonInteraction,
             return;
         }
 
-        // Show modal to collect IGN
+        // Get IGN from session (user provided it during ticket creation)
+        const ign = session.rotmg_ign;
+
+        if (!ign) {
+            // Fallback to modal if IGN is missing (old tickets before this change)
+            await showIgnInputModal(interaction, userId);
+            return;
+        }
+
+        // Show confirmation modal with IGN pre-filled for verification
         const modal = new ModalBuilder()
-            .setCustomId(`verification:approve_modal:${userId}`)
-            .setTitle('Approve Verification');
+            .setCustomId(`verification:approve_confirm:${userId}`)
+            .setTitle('Confirm Verification Approval');
 
         const ignInput = new TextInputBuilder()
             .setCustomId('ign')
-            .setLabel('IGN (from screenshot)')
+            .setLabel('IGN (verify this matches screenshot)')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Enter the user\'s ROTMG IGN')
+            .setValue(ign)
             .setRequired(true)
             .setMaxLength(16);
 
@@ -171,6 +180,28 @@ async function handleVerificationApproveInternal(interaction: ButtonInteraction,
 }
 
 /**
+ * Fallback: Show IGN input modal for old tickets without IGN in session
+ */
+async function showIgnInputModal(interaction: ButtonInteraction, userId: string): Promise<void> {
+    const modal = new ModalBuilder()
+        .setCustomId(`verification:approve_modal:${userId}`)
+        .setTitle('Approve Verification');
+
+    const ignInput = new TextInputBuilder()
+        .setCustomId('ign')
+        .setLabel('IGN (from screenshot)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Enter the user\'s ROTMG IGN')
+        .setRequired(true)
+        .setMaxLength(16);
+
+    const actionRow = new ActionRowBuilder<TextInputBuilder>().addComponents(ignInput);
+    modal.addComponents(actionRow);
+
+    await interaction.showModal(modal);
+}
+
+/**
  * Handle modal submission for approval with IGN
  */
 export async function handleVerificationApproveModal(interaction: ModalSubmitInteraction): Promise<void> {
@@ -185,7 +216,7 @@ export async function handleVerificationApproveModal(interaction: ModalSubmitInt
     await interaction.deferReply({ ephemeral: true });
 
     try {
-        // Extract user ID from modal custom ID
+        // Extract user ID from modal custom ID (supports both approve_confirm and approve_modal)
         const userId = interaction.customId.split(':')[2];
         const ign = interaction.fields.getTextInputValue('ign').trim();
 

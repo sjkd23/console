@@ -846,9 +846,9 @@ export async function handleQuotaSelectDungeon(interaction: StringSelectMenuInte
 
     const pointsInput = new TextInputBuilder()
         .setCustomId('points')
-        .setLabel(`Point Value (0 to remove override)`)
+        .setLabel(`Point Value (0 or negative to remove)`)
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('e.g., 2.25 or 0.5')
+        .setPlaceholder('e.g., 2.25, 0.5, or -1 to remove')
         .setRequired(true)
         .setValue(currentOverride !== undefined ? formatPoints(currentOverride) : '1');
 
@@ -878,13 +878,13 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
 
     const points = parseFloat(interaction.fields.getTextInputValue('points'));
 
-    if (isNaN(points) || points < 0) {
-        await interaction.editReply('❌ Points must be a non-negative number.');
+    if (isNaN(points)) {
+        await interaction.editReply('❌ Points must be a valid number. Use 0 or negative values to remove the override.');
         return;
     }
 
-    // Check decimal places (max 2)
-    if (Math.round(points * 100) !== points * 100) {
+    // Check decimal places (max 2) for positive values only
+    if (points >= 0 && Math.round(points * 100) !== points * 100) {
         await interaction.editReply('❌ Points can have at most 2 decimal places (e.g., 2.25 or 0.5).');
         return;
     }
@@ -893,13 +893,13 @@ export async function handleQuotaDungeonModal(interaction: ModalSubmitInteractio
     const hasAdminPerm = member?.permissions.has(PermissionFlagsBits.Administrator);
 
     try {
-        if (points === 0) {
-            // Remove override
+        if (points <= 0) {
+            // Remove override (0 or negative)
             await deleteDungeonOverride(interaction.guildId!, roleId, dungeonKey, {
                 actor_user_id: interaction.user.id,
                 actor_has_admin_permission: hasAdminPerm,
             });
-            await interaction.editReply(`✅ Removed custom point override for **${dungeonKey}** (reverted to default: 1 pt)`);
+            await interaction.editReply(`✅ Removed custom point override for **${dungeonKey}** (reverted to default)`);
         } else {
             // Set override
             await setDungeonOverride(interaction.guildId!, roleId, dungeonKey, {

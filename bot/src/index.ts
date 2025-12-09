@@ -25,6 +25,7 @@ import { handleSetParty, handleSetLocation, handleSetChainAmount, handleSetParty
 import { handleScreenshotButton } from './interactions/buttons/raids/screenshot-submit.js';
 import { handleKeyReaction } from './interactions/buttons/raids/key-reaction.js';
 import { handlePingRaiders } from './interactions/buttons/raids/ping-raiders.js';
+import { handleLockJoin } from './interactions/buttons/raids/lock-join.js';
 import { handleHeadcountJoin } from './interactions/buttons/raids/headcount-join.js';
 import { handleHeadcountKey } from './interactions/buttons/raids/headcount-key.js';
 import { handleHeadcountOrganizerPanel, handleHeadcountOrganizerPanelConfirm, handleHeadcountOrganizerPanelDeny } from './interactions/buttons/raids/headcount-organizer-panel.js';
@@ -549,6 +550,11 @@ client.on('interactionCreate', async (interaction) => {
                 await safeHandleInteraction(interaction, () => handlePingRaiders(interaction, runId), { ephemeral: true });
                 return;
             }
+            if (action === 'lockjoin') {
+                if (!await applyButtonRateLimit(interaction, 'run:organizer')) return;
+                await safeHandleInteraction(interaction, () => handleLockJoin(interaction, runId), { ephemeral: true });
+                return;
+            }
 
             // fallback
             await interaction.reply({ content: 'Unknown action.', flags: MessageFlags.Ephemeral });
@@ -564,7 +570,7 @@ client.on('interactionCreate', async (interaction) => {
                 return;
             }
 
-            if (interaction.customId.startsWith('verification:approve_modal:')) {
+            if (interaction.customId.startsWith('verification:approve_modal:') || interaction.customId.startsWith('verification:approve_confirm:')) {
                 await safeHandleInteraction(interaction, () => handleVerificationApproveModal(interaction), { ephemeral: true });
                 return;
             }

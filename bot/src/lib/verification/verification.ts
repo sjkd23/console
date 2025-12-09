@@ -664,16 +664,21 @@ export function createManualVerificationEmbed(
 export function createVerificationTicketEmbed(
     userId: string,
     screenshotUrl: string,
-    userTag?: string
+    userTag?: string,
+    ign?: string
 ): EmbedBuilder {
     return new EmbedBuilder()
         .setTitle('🎫 Manual Verification Request')
         .setDescription(
             `**User:** <@${userId}>\n` +
             `**Discord Tag:** ${userTag || 'Unknown'}\n` +
-            `**User ID:** ${userId}\n\n` +
+            `**User ID:** ${userId}\n` +
+            (ign ? `**Provided IGN:** \`${ign}\`\n\n` : '\n') +
             '**Screenshot submitted for review:**\n' +
-            '⚠️ **Staff must provide the IGN when approving**'
+            (ign 
+                ? '✅ **Please verify the IGN matches the screenshot, then click Approve**'
+                : '⚠️ **Staff must provide the IGN when approving**'
+            )
         )
         .setImage(screenshotUrl)
         .setColor(0xFFA500)

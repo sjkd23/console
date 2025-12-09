@@ -564,13 +564,33 @@ export async function handleRealmEyeVerification(interaction: ButtonInteraction)
             return;
         }
 
-        if (session.status !== 'pending_ign') {
+        // Allow switching to RealmEye from initial state or restarting from terminal states
+        if (session.status !== 'pending_ign' && 
+            session.status !== 'denied' && 
+            session.status !== 'cancelled' && 
+            session.status !== 'expired' && 
+            session.status !== 'verified') {
             await interaction.editReply(
                 '❌ **Invalid State**\n\n' +
                 `Your verification session is currently: ${session.status}\n` +
-                'Please restart verification if needed.'
+                'Please wait for your current verification attempt to complete or be reviewed.'
             );
             return;
+        }
+
+        // If session is in a terminal state, reset it to pending_ign for fresh start
+        if (session.status !== 'pending_ign') {
+            const resetSession = await updateSession(guildId, interaction.user.id, {
+                status: 'pending_ign',
+            });
+
+            if (!resetSession) {
+                await interaction.editReply(
+                    '❌ **Session Error**\n\n' +
+                    'Failed to reset verification session. Please click "Get Verified" button again to start fresh.'
+                );
+                return;
+            }
         }
 
         // Get DM channel and guild
@@ -641,14 +661,33 @@ export async function handleManualVerifyScreenshot(interaction: ButtonInteractio
             return;
         }
 
-        // Allow switching to manual from initial state
-        if (session.status !== 'pending_ign') {
+        // Allow switching to manual from initial state or restarting from terminal states
+        if (session.status !== 'pending_ign' && 
+            session.status !== 'denied' && 
+            session.status !== 'cancelled' && 
+            session.status !== 'expired' && 
+            session.status !== 'verified') {
             await interaction.editReply(
                 '❌ **Invalid State**\n\n' +
                 `Your verification session is currently: ${session.status}\n` +
-                'Please restart verification if you want to try manual verification.'
+                'Please wait for your current verification attempt to complete or be reviewed.'
             );
             return;
+        }
+
+        // If session is in a terminal state, reset it to pending_ign for fresh start
+        if (session.status !== 'pending_ign') {
+            const resetSession = await updateSession(guildId, interaction.user.id, {
+                status: 'pending_ign',
+            });
+
+            if (!resetSession) {
+                await interaction.editReply(
+                    '❌ **Session Error**\n\n' +
+                    'Failed to reset verification session. Please click "Get Verified" button again to start fresh.'
+                );
+                return;
+            }
         }
 
         // Get DM channel
@@ -698,19 +737,24 @@ export async function handleManualVerifyScreenshot(interaction: ButtonInteractio
             return;
         }
 
-        // Send screenshot instructions
-        const embed = createManualVerificationEmbed(
-            guild.name, 
-            config.manual_verify_instructions,
-            config.manual_verify_instructions_image
-        );
+        // Send IGN prompt first
+        const ignPromptEmbed = new EmbedBuilder()
+            .setTitle('📝 Manual Verification - Step 1')
+            .setDescription(
+                `**Server:** ${guild.name}\n\n` +
+                '**Please provide your ROTMG In-Game Name (IGN)**\n\n' +
+                'Type your IGN in the next message.\n\n' +
+                '⚠️ **Important:** Make sure the IGN you provide matches the one visible in your screenshot.'
+            )
+            .setColor(0xFFA500)
+            .setFooter({ text: 'Type your IGN next or "cancel" to abort' });
 
         await dmChannel.send({
-            embeds: [embed],
+            embeds: [ignPromptEmbed],
         });
 
-        // Start screenshot collection (no IGN needed)
-        collectScreenshot(dmChannel, guildId, interaction.user.id, guild.name);
+        // Start IGN collection, then screenshot collection
+        collectIgnThenScreenshot(dmChannel, guildId, interaction.user.id, guild.name, config);
     } catch (err) {
         console.error('[ManualVerifyScreenshot] Error:', err);
         await interaction.editReply(
@@ -720,13 +764,150 @@ export async function handleManualVerifyScreenshot(interaction: ButtonInteractio
 }
 
 /**
- * Collect screenshot from user for manual verification
+ * Collect IGN from user, validate it's not a duplicate, then collect screenshot
+ */
+async function collectIgnThenScreenshot(
+    dmChannel: DMChannel,
+    guildId: string,
+    userId: string,
+    guildName: string,
+    config: any
+): Promise<void> {
+    const ignCollector = dmChannel.createMessageCollector({
+        filter: (m: Message) => m.author.id === userId && !m.author.bot,
+        time: MESSAGE_COLLECT_TIMEOUT,
+    });
+
+    ignCollector.on('collect', async (message: Message) => {
+        // Check for cancel
+        if (message.content.trim().toLowerCase() === 'cancel') {
+            ignCollector.stop('cancelled');
+            const cancelSession = await updateSession(guildId, userId, { status: 'cancelled' });
+            if (!cancelSession) {
+                await dmChannel.send(
+                    '❌ **Verification Session Expired**\n\n' +
+                    'Your verification session has expired or was reset. Please run the verification command again in the server.'
+                );
+                return;
+            }
+            await dmChannel.send(
+                '❌ **Verification Cancelled**\n\n' +
+                'You can restart verification anytime by clicking the "Get Verified" button in the server.'
+            );
+            return;
+        }
+
+        const ign = message.content.trim();
+
+        // Validate IGN format
+        const validation = validateIGN(ign);
+        if (!validation.valid) {
+            await dmChannel.send(
+                `❌ **Invalid IGN**: ${validation.error}\n\n` +
+                'Please send a valid ROTMG IGN (1-16 characters, letters, numbers, spaces, - or _)'
+            );
+            return;
+        }
+
+        ignCollector.stop('success');
+
+        // Check if IGN is already verified in the database
+        try {
+            const { checkIgnExists } = await import('../../../lib/utilities/http.js');
+            
+            const ignCheck = await checkIgnExists(guildId, ign);
+            
+            if (ignCheck.exists && ignCheck.user_id !== userId) {
+                // IGN is already verified on a different account
+                await dmChannel.send(
+                    '❌ **IGN Already Verified**\n\n' +
+                    `The IGN \`${ign}\` is already verified on a different Discord account in this server.\n\n` +
+                    '**If this is your account:**\n' +
+                    'Please contact a **Security+** staff member for assistance. They can help resolve this issue.\n\n' +
+                    'Your verification ticket has **not** been created.'
+                );
+                
+                // Cancel the session
+                await updateSession(guildId, userId, { status: 'cancelled' });
+                
+                const guild = dmChannel.client.guilds.cache.get(guildId);
+                if (guild) {
+                    await logVerificationEvent(
+                        guild,
+                        userId,
+                        `**⚠️ Duplicate IGN detected**: User attempted manual verification with IGN \`${ign}\` which is already verified on account <@${ignCheck.user_id}>. Ticket was not created.`,
+                        { error: true }
+                    );
+                }
+                return;
+            }
+        } catch (checkErr) {
+            console.error('[ManualVerification] Error checking for duplicate IGN:', checkErr);
+            // Continue with verification - better to allow it than block legitimate users
+        }
+
+        // IGN is valid and not a duplicate, store it in session
+        const updatedSession = await updateSession(guildId, userId, {
+            rotmg_ign: ign,
+        });
+
+        if (!updatedSession) {
+            await dmChannel.send(
+                '❌ **Verification Session Expired**\n\n' +
+                'Your verification session has expired or was reset. Please click the "Get Verified" button in the server to start a new verification.'
+            );
+            return;
+        }
+
+        // Send screenshot instructions
+        const screenshotEmbed = createManualVerificationEmbed(
+            guildName,
+            config.manual_verify_instructions,
+            config.manual_verify_instructions_image
+        );
+
+        await dmChannel.send(
+            `✅ **IGN Received: \`${ign}\`**\n\n` +
+            'Now please send your screenshot as instructed below:'
+        );
+
+        await dmChannel.send({
+            embeds: [screenshotEmbed],
+        });
+
+        const guild = dmChannel.client.guilds.cache.get(guildId);
+        if (guild) {
+            await logVerificationEvent(
+                guild,
+                userId,
+                `**IGN provided**: \`${ign}\`. Waiting for screenshot upload...`
+            );
+        }
+
+        // Now collect the screenshot
+        collectScreenshot(dmChannel, guildId, userId, guildName, ign);
+    });
+
+    ignCollector.on('end', async (collected, reason) => {
+        if (reason === 'time') {
+            await dmChannel.send(
+                '⏱️ **Verification Timed Out**\n\n' +
+                'You took too long to provide your IGN. Please click the "Get Verified" button in the server to try again.'
+            );
+            await updateSession(guildId, userId, { status: 'expired' });
+        }
+    });
+}
+
+/**
+ * Collect screenshot from user for manual verification (IGN already collected)
  */
 async function collectScreenshot(
     dmChannel: DMChannel,
     guildId: string,
     userId: string,
-    guildName: string
+    guildName: string,
+    ign: string
 ): Promise<void> {
     const collector = dmChannel.createMessageCollector({
         filter: (m: Message) => m.author.id === userId && !m.author.bot,
@@ -773,9 +954,9 @@ async function collectScreenshot(
 
         await dmChannel.send(
             '✅ **Screenshot Received**\n\n' +
-            'Your screenshot has been submitted for review by security+.\n' +
-            'You will receive a DM when your verification is approved or denied.\n\n' +
-            '**Note:** Security+ will provide your IGN when approving your request.'
+            'Your screenshot has been submitted for review by Security+.\n' +
+            `Your provided IGN: \`${ign}\`\n\n` +
+            'You will receive a DM when your verification is approved or denied.'
         );
 
         // Log screenshot submission
@@ -868,8 +1049,8 @@ async function collectScreenshot(
             // Fetch user to get their Discord tag
             const user = await guild.client.users.fetch(userId);
             
-            // Send ticket (no IGN yet, staff will provide it)
-            const ticketEmbed = createVerificationTicketEmbed(userId, attachment.url, user.tag);
+            // Send ticket with user's provided IGN
+            const ticketEmbed = createVerificationTicketEmbed(userId, attachment.url, user.tag, ign);
             const ticketButtons = createVerificationTicketButtons(userId);
 
             const ticketMessage = await channel.send({

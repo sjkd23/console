@@ -42,6 +42,8 @@ export const DUNGEONS: readonly DungeonConfig[] = [
     { code: 'MOONLIGHT VILLAGE', name: 'Moonlight Village', category: 'Exaltation Dungeons' },
     { code: 'STEAMWORKS', name: 'Steamworks', category: 'Exaltation Dungeons' },
     { code: 'ADVANCED STEAMWORKS', name: 'Advanced Steamworks', category: 'Exaltation Dungeons' },
+    { code: 'ICE_CITADEL', name: 'Ice Citadel', category: 'Exaltation Dungeons' },
+    { code: 'SPECTRAL_PENITENTIARY', name: 'Spectral Penitentiary', category: 'Exaltation Dungeons' },
 
     // Event Dungeons
     { code: 'TOMB_OF_THE_ANCIENTS', name: 'Tomb of the Ancients', category: 'Event Dungeons' },

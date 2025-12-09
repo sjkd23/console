@@ -98,6 +98,54 @@ export default async function raidersRoutes(app: FastifyInstance) {
     });
 
     /**
+     * GET /raiders/check-ign/:guild_id/:ign
+     * Check if an IGN is already in use in a guild
+     * Returns: { exists: boolean, user_id?: string, is_main?: boolean }
+     */
+    app.get('/raiders/check-ign/:guild_id/:ign', async (req, reply) => {
+        const Params = z.object({
+            guild_id: zSnowflake,
+            ign: z.string().trim().min(1).max(16),
+        });
+        const parsed = Params.safeParse(req.params);
+
+        if (!parsed.success) {
+            const msg = parsed.error.issues.map(i => i.message).join('; ');
+            return Errors.validation(reply, msg);
+        }
+
+        const { guild_id, ign } = parsed.data;
+
+        // Check if IGN exists as main IGN or alt IGN
+        const res = await query<{
+            user_id: string;
+            ign: string;
+            alt_ign: string | null;
+        }>(
+            `SELECT user_id, ign, alt_ign 
+             FROM raider 
+             WHERE guild_id = $1::bigint 
+             AND (LOWER(ign) = LOWER($2) OR LOWER(alt_ign) = LOWER($2))`,
+            [guild_id, ign]
+        );
+
+        if (!res.rowCount || res.rowCount === 0) {
+            return reply.code(200).send({
+                exists: false,
+            });
+        }
+
+        const raider = res.rows[0];
+        const isMainIgn = raider.ign.toLowerCase() === ign.toLowerCase();
+
+        return reply.code(200).send({
+            exists: true,
+            user_id: raider.user_id,
+            is_main: isMainIgn,
+        });
+    });
+
+    /**
      * POST /raiders/verify
      * Manually verify a Discord guild member by associating their ROTMG IGN.
      * Sets status='approved', verified_at=NOW(), and stores the IGN.

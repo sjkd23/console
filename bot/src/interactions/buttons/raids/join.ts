@@ -23,10 +23,17 @@ export async function handleJoin(btn: ButtonInteraction, runId: string) {
         organizerId: string;
         roleId: string | null;
         status: string;
+        joinLocked: boolean;
     }>(`/runs/${runId}`, { guildId }).catch(() => null);
 
     if (!run) {
         await btn.editReply({ content: '❌ Run not found.' });
+        return;
+    }
+
+    // Check if join is locked
+    if (run.joinLocked) {
+        await btn.editReply({ content: '🔒 **Join is currently locked.** The organizer has disabled joining for this run.' });
         return;
     }
 

@@ -16,23 +16,16 @@ export const REALMEYE_BASE_URL = 'https://www.realmeye.com';
 export const PLAYER_SEGMENT = 'player';
 
 /**
- * Browser User-Agent strings for HTTP requests.
- * RealmEyeSharper uses randomized User-Agent to appear more like a real browser.
- * We'll use a single modern browser UA for consistency.
+ * Custom User-Agent for Realmeye API requests.
+ * Using a specific identifier to be respectful to Realmeye's servers.
  */
-const USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-];
+const CUSTOM_USER_AGENT = 'console-dungeoneer-sjkd (rotmg-raid-bot)';
 
 /**
- * Get a random User-Agent string.
- * Mirrors RealmEyeSharper's approach to randomizing requests.
+ * Rate limiting: Track the last request time to ensure 1 request per second.
  */
-function getRandomUserAgent(): string {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
+let lastRequestTime = 0;
+const RATE_LIMIT_MS = 1000; // 1 second between requests
 
 /**
  * Build the full URL for a player profile.
@@ -44,17 +37,31 @@ export function buildPlayerUrl(ign: string): string {
 }
 
 /**
- * Fetch a RealmEye page with proper headers.
+ * Fetch a RealmEye page with proper headers and rate limiting.
  * Analogous to RealmEyeSharper's HTTP client setup.
+ * Rate limited to 1 request per second to be respectful to Realmeye's servers.
  * 
  * @param url The URL to fetch
  * @returns Response object or null if request failed
  */
 export async function fetchRealmEyePage(url: string): Promise<Response | null> {
+    // Enforce rate limiting: wait if needed to maintain 1 request per second
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    
+    if (timeSinceLastRequest < RATE_LIMIT_MS) {
+        const waitTime = RATE_LIMIT_MS - timeSinceLastRequest;
+        console.log(`[RealmEye HTTP] Rate limiting: waiting ${waitTime}ms before next request`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    // Update last request time
+    lastRequestTime = Date.now();
+    
     try {
         const response = await fetch(url, {
             headers: {
-                'User-Agent': getRandomUserAgent(),
+                'User-Agent': CUSTOM_USER_AGENT,
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Accept-Encoding': 'gzip, deflate, br',
