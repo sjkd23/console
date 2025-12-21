@@ -27,6 +27,7 @@ import { checkOrganizerActiveActivities } from '../../lib/utilities/organizer-ac
 import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.js';
 import { sendRunOrganizerPanelAsFollowUp } from '../../interactions/buttons/raids/organizer-panel.js';
 import { buildRunEmbed, buildRunButtons } from '../../lib/utilities/run-panel-builder.js';
+import { autoJoinOrganizerToRun } from '../../lib/utilities/auto-join-helpers.js';
 
 const logger = createLogger('RunCreate');
 
@@ -185,6 +186,20 @@ export const runCreate: SlashCommand = {
             // Reply immediately with the run link (before reactions are added)
             await interaction.editReply(
                 `Run created${sent ? ` and posted: ${sent.url}` : ''}`
+            );
+
+            // Automatically add the organizer to their run (simulates clicking join button)
+            // This happens after the message is posted but before the organizer panel
+            await autoJoinOrganizerToRun(
+                interaction.client,
+                guild,
+                sent,
+                runId,
+                interaction.user.id,
+                interaction.user.username,
+                d.codeName,
+                d.dungeonName,
+                role?.id || null
             );
 
             // Show the organizer panel automatically as a followUp

@@ -30,6 +30,7 @@ import {
 import { fetchConfiguredRaidChannel } from '../../lib/utilities/channel-helpers.js';
 import { buildRunMessageContent } from '../../lib/utilities/run-message-helpers.js';
 import { sendHeadcountOrganizerPanelAsFollowUp } from '../../interactions/buttons/raids/headcount-organizer-panel.js';
+import { autoJoinOrganizerToHeadcount } from '../../lib/utilities/auto-join-helpers.js';
 
 const logger = createLogger('Headcount');
 
@@ -517,6 +518,18 @@ async function createHeadcountPanel(
             content: `✅ Headcount created: ${sent.url}`,
             components: []
         });
+
+        // Automatically add the organizer to their headcount (simulates clicking join button)
+        // This happens after the message is posted but before the organizer panel
+        await autoJoinOrganizerToHeadcount(
+            interaction.client,
+            guild,
+            sent,
+            interaction.user.id,
+            interaction.user.username,
+            selectedDungeons.map(d => d.dungeonName),
+            sent.id // Use message ID as panel timestamp
+        );
 
         // Show the organizer panel automatically as a followUp
         // This allows the organizer to immediately manage the headcount

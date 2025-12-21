@@ -34,6 +34,7 @@ import { createRunRole } from '../../../lib/utilities/run-role-manager.js';
 import { createLogger } from '../../../lib/logging/logger.js';
 import { buildRunOrganizerPanelContent } from './organizer-panel.js';
 import { buildRunEmbed, buildRunButtons } from '../../../lib/utilities/run-panel-builder.js';
+import { autoJoinOrganizerToRun } from '../../../lib/utilities/auto-join-helpers.js';
 
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
     // CRITICAL: Wrap in mutex to prevent concurrent conversion
@@ -388,6 +389,20 @@ async function convertHeadcountToRun(
     // CRITICAL: Unregister the headcount from active tracking
     // This prevents the "multiple runs" error when using /taken after converting a headcount
     unregisterHeadcount(interaction.guild.id, organizerId);
+
+    // Automatically add the organizer to their converted run
+    // This simulates clicking the join button - adds to raiders table, assigns role, updates embed
+    await autoJoinOrganizerToRun(
+        interaction.client,
+        interaction.guild,
+        newRunMessage,
+        runId,
+        organizerId,
+        interaction.user.username,
+        dungeon.codeName,
+        dungeon.dungeonName,
+        role?.id || null
+    );
 
     // Build the run organizer panel using the shared function
     // This ensures consistency with /run command and shows headcount keys properly
