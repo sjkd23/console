@@ -94,6 +94,9 @@ export const DUNGEONS: readonly DungeonConfig[] = [
     // Basic Dungeons
     { code: 'ANCIENT_RUINS', name: 'Ancient Ruins', category: 'Basic Dungeons' },
     { code: 'CANDYLAND_HUNTING_GROUNDS', name: 'Candyland Hunting Grounds', category: 'Basic Dungeons' },
+
+    // Meta Dungeons (catch-all options)
+    { code: 'REALM_DUNGEON', name: 'Realm Dungeon', category: 'Basic Dungeons' },
 ];
 
 /**

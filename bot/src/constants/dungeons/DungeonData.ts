@@ -2231,5 +2231,32 @@ export const DUNGEON_DATA: readonly DungeonInfo[] = [
         ],
         dungeonCategory: "Exaltation Dungeons",
         isBuiltIn: true
+    },
+    {
+        codeName: "REALM_DUNGEON",
+        dungeonName: "Realm Dungeons",
+        portalEmojiId: "574080648000569353",
+        keyReactions: [
+            {
+                mapKey: "REALM_DUNGEON_KEY",
+                maxEarlyLocation: 15
+            }
+        ],
+        otherReactions: [],
+        portalLink: {
+            url: "https://static.drips.pw/rotmg/wiki/Environment/Portals/Pirate%20Cave%20Portal.png",
+            name: "Pirate Cave Portal"
+        },
+        bossLinks: [
+            {
+                url: "https://static.drips.pw/rotmg/wiki/Enemies/Dreadstump%20the%20Pirate%20King.png",
+                name: "Dreadstump the Pirate King"
+            }
+        ],
+        dungeonColors: [
+            0x1dbfaa
+        ],
+        dungeonCategory: "Basic Dungeons",
+        isBuiltIn: true
     }
 ];
