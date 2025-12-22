@@ -220,6 +220,29 @@ export const party: SlashCommand = {
                 .setColor(0x57F287) // Green for Open
                 .setTimestamp();
 
+            // Add party name field
+            embed.addFields({
+                name: 'Party',
+                value: partyName,
+                inline: true
+            });
+
+            // Add location field if provided
+            if (location) {
+                embed.addFields({
+                    name: 'Location',
+                    value: location,
+                    inline: true
+                });
+            }
+
+            // Add party owner field
+            embed.addFields({
+                name: 'Party Owner',
+                value: `<@${interaction.user.id}>`,
+                inline: true
+            });
+
             // Add dungeons field if any were specified
             if (dungeonCodes.length > 0) {
                 embed.addFields({
@@ -228,13 +251,6 @@ export const party: SlashCommand = {
                     inline: false
                 });
             }
-
-            // Add party leader field
-            embed.addFields({
-                name: 'Party Owner',
-                value: `<@${interaction.user.id}>`,
-                inline: true
-            });
 
             // Create Close Button
             // Custom ID format: party:close:{userId} - parsed in party-actions.ts
