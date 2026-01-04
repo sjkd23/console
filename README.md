@@ -4,9 +4,8 @@
 
 A comprehensive Discord bot for organizing **Realm of the Mad God** raids. Features automated run management, dual verification (RealmEye + Screenshot), moderation tools, and staff quota tracking.
 
-**Version:** 1.1 | **Status:** Production Ready
 
-📚 **[View Complete Documentation](docs/README.md)** — Setup guides, command reference, and architecture
+**[View Complete Documentation](docs/README.md)** — Setup guides, command reference, and architecture
 
 ---
 
