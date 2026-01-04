@@ -252,15 +252,21 @@ export const party: SlashCommand = {
                 });
             }
 
-            // Create Close Button
+            // Create Close and Extend Buttons
             // Custom ID format: party:close:{userId} - parsed in party-actions.ts
             const closeButton = new ButtonBuilder()
                 .setCustomId(`party:close:${interaction.user.id}`)
                 .setLabel('Close')
                 .setStyle(ButtonStyle.Danger);
 
+            // Custom ID format: party:extend:{userId} - parsed in party-actions.ts
+            const extendButton = new ButtonBuilder()
+                .setCustomId(`party:extend:${interaction.user.id}`)
+                .setLabel('Extend')
+                .setStyle(ButtonStyle.Success);
+
             const row = new ActionRowBuilder<ButtonBuilder>()
-                .addComponents(closeButton);
+                .addComponents(extendButton, closeButton);
 
             // 9) Send the party post to party finder channel
             try {

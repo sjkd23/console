@@ -30,6 +30,10 @@ interface ActivePartyInfo {
     channelId: string;
     createdAt: number;
     guildId: string;
+    expiresAt: number; // Unix timestamp when party will auto-close
+    autoCloseTimer?: NodeJS.Timeout; // Timer for auto-close
+    tenMinWarningTimer?: NodeJS.Timeout; // Timer for 10-minute warning
+    fiveMinWarningTimer?: NodeJS.Timeout; // Timer for 5-minute warning
 }
 
 // Map: userId -> active party info
@@ -123,7 +127,7 @@ export function checkRateLimit(userId: string): {
  * Record a new party creation
  * 
  * Adds the party to active tracking and records the creation timestamp
- * for rate limit enforcement. Schedules auto-close after 2 hours.
+ * for rate limit enforcement. Schedules auto-close after 2 hours with warnings.
  * 
  * @param userId - Discord user ID who created the party
  * @param messageId - Discord message ID of the party post
@@ -132,37 +136,64 @@ export function checkRateLimit(userId: string): {
  */
 export function recordPartyCreation(userId: string, messageId: string, channelId: string, guildId: string): void {
     const now = Date.now();
+    const expiresAt = now + PARTY_AUTO_CLOSE_MS;
+    
+    // Schedule 10-minute warning (2 hours - 10 minutes)
+    const tenMinWarningTimer = setTimeout(() => {
+        sendPartyWarning(userId, 10).catch(err => {
+            console.error(`[Party] Failed to send 10-minute warning for user ${userId}:`, err);
+        });
+    }, PARTY_AUTO_CLOSE_MS - (10 * 60 * 1000));
+    
+    // Schedule 5-minute warning (2 hours - 5 minutes)
+    const fiveMinWarningTimer = setTimeout(() => {
+        sendPartyWarning(userId, 5).catch(err => {
+            console.error(`[Party] Failed to send 5-minute warning for user ${userId}:`, err);
+        });
+    }, PARTY_AUTO_CLOSE_MS - (5 * 60 * 1000));
+    
+    // Schedule auto-close after 2 hours
+    const autoCloseTimer = setTimeout(() => {
+        autoCloseParty(userId).catch(err => {
+            console.error(`[Party] Failed to auto-close party for user ${userId}:`, err);
+        });
+    }, PARTY_AUTO_CLOSE_MS);
     
     // Add to active parties
     activeParties.set(userId, {
         messageId,
         channelId,
         createdAt: now,
-        guildId
+        guildId,
+        expiresAt,
+        autoCloseTimer,
+        tenMinWarningTimer,
+        fiveMinWarningTimer
     });
     
     // Add to creation history
     const history = partyCreationHistory.get(userId) || [];
     history.push({ timestamp: now });
     partyCreationHistory.set(userId, history);
-    
-    // Schedule auto-close after 2 hours
-    setTimeout(() => {
-        autoCloseParty(userId).catch(err => {
-            console.error(`[Party] Failed to auto-close party for user ${userId}:`, err);
-        });
-    }, PARTY_AUTO_CLOSE_MS);
 }
 
 /**
  * Remove a party from active tracking when it's closed
  * 
+ * Clears all pending timers (warnings and auto-close) to prevent stale notifications.
  * Note: This does NOT remove the creation from rate limit history.
  * The creation timestamp remains for rate limit enforcement.
  * 
  * @param userId - Discord user ID whose party is being removed
  */
 export function removeActiveParty(userId: string): void {
+    const partyInfo = activeParties.get(userId);
+    if (partyInfo) {
+        // Clear all timers
+        if (partyInfo.autoCloseTimer) clearTimeout(partyInfo.autoCloseTimer);
+        if (partyInfo.tenMinWarningTimer) clearTimeout(partyInfo.tenMinWarningTimer);
+        if (partyInfo.fiveMinWarningTimer) clearTimeout(partyInfo.fiveMinWarningTimer);
+    }
     activeParties.delete(userId);
 }
 
@@ -191,8 +222,101 @@ export function cleanupExpiredRecords(): void {
 }
 
 /**
- * Auto-close a party after 2 hours
+ * Extend a party's lifetime by 1 hour
+ * 
+ * Cancels existing timers and reschedules them with the new expiration time.
+ * 
+ * @param userId - Discord user ID whose party is being extended
+ * @returns true if party was extended, false if no active party found
+ */
+export function extendPartyLifetime(userId: string): boolean {
+    const partyInfo = activeParties.get(userId);
+    if (!partyInfo) return false;
+    
+    // Clear existing timers
+    if (partyInfo.autoCloseTimer) clearTimeout(partyInfo.autoCloseTimer);
+    if (partyInfo.tenMinWarningTimer) clearTimeout(partyInfo.tenMinWarningTimer);
+    if (partyInfo.fiveMinWarningTimer) clearTimeout(partyInfo.fiveMinWarningTimer);
+    
+    // Calculate new expiration time (add 1 hour)
+    const EXTENSION_TIME_MS = 60 * 60 * 1000; // 1 hour
+    const newExpiresAt = partyInfo.expiresAt + EXTENSION_TIME_MS;
+    const timeUntilExpiry = newExpiresAt - Date.now();
+    
+    // Schedule new timers based on time until expiry
+    let tenMinWarningTimer: NodeJS.Timeout | undefined;
+    let fiveMinWarningTimer: NodeJS.Timeout | undefined;
+    
+    // Only schedule 10-minute warning if we have more than 10 minutes left
+    if (timeUntilExpiry > 10 * 60 * 1000) {
+        tenMinWarningTimer = setTimeout(() => {
+            sendPartyWarning(userId, 10).catch(err => {
+                console.error(`[Party] Failed to send 10-minute warning for user ${userId}:`, err);
+            });
+        }, timeUntilExpiry - (10 * 60 * 1000));
+    }
+    
+    // Only schedule 5-minute warning if we have more than 5 minutes left
+    if (timeUntilExpiry > 5 * 60 * 1000) {
+        fiveMinWarningTimer = setTimeout(() => {
+            sendPartyWarning(userId, 5).catch(err => {
+                console.error(`[Party] Failed to send 5-minute warning for user ${userId}:`, err);
+            });
+        }, timeUntilExpiry - (5 * 60 * 1000));
+    }
+    
+    // Schedule new auto-close
+    const autoCloseTimer = setTimeout(() => {
+        autoCloseParty(userId).catch(err => {
+            console.error(`[Party] Failed to auto-close party for user ${userId}:`, err);
+        });
+    }, timeUntilExpiry);
+    
+    // Update party info
+    partyInfo.expiresAt = newExpiresAt;
+    partyInfo.autoCloseTimer = autoCloseTimer;
+    partyInfo.tenMinWarningTimer = tenMinWarningTimer;
+    partyInfo.fiveMinWarningTimer = fiveMinWarningTimer;
+    
+    activeParties.set(userId, partyInfo);
+    
+    return true;
+}
+
+/**
+ * Send a warning to the party owner in the thread
+ * 
+ * @param userId - Discord user ID of party owner
+ * @param minutesRemaining - Minutes until party auto-closes (10 or 5)
+ */
+async function sendPartyWarning(userId: string, minutesRemaining: number): Promise<void> {
+    const partyInfo = activeParties.get(userId);
+    if (!partyInfo) return; // Party already closed manually
+    
+    try {
+        // Import Discord client from index
+        const { client } = await import('../../index.js');
+        if (!client) return;
+        
+        const channel = await client.channels.fetch(partyInfo.channelId);
+        if (!channel || !channel.isTextBased()) return;
+        
+        const message = await channel.messages.fetch(partyInfo.messageId);
+        if (!message || !message.thread) return;
+        
+        // Send warning in the thread
+        await message.thread.send(
+            `<@${userId}> ⏰ Your party will be **automatically closed and deleted** in **${minutesRemaining} minutes**.`
+        );
+    } catch (err) {
+        console.error('[Party] Error sending warning:', err);
+    }
+}
+
+/**
+ * Auto-close a party after expiration time
  * Called by setTimeout when party expires
+ * Deletes the message instead of just marking it as closed
  */
 async function autoCloseParty(userId: string): Promise<void> {
     const partyInfo = activeParties.get(userId);
@@ -209,39 +333,19 @@ async function autoCloseParty(userId: string): Promise<void> {
         const message = await channel.messages.fetch(partyInfo.messageId);
         if (!message) return;
         
-        const embed = message.embeds[0];
-        if (!embed) return;
+        // Extract party name for logging
+        const messageContent = message.content || '';
+        const partyNameMatch = messageContent.match(/\*\*Party:\*\*\s*([^\|]+)/);
+        const partyName = partyNameMatch ? partyNameMatch[1].trim() : 'Unknown Party';
         
-        // Import EmbedBuilder
-        const { EmbedBuilder } = await import('discord.js');
-        
-        // Update embed to show party as closed (auto)
-        const newEmbed = new EmbedBuilder(embed.toJSON());
-        newEmbed.setColor(0xED4245); // Red for Closed
-        newEmbed.setTitle('⏰ Party Auto-Closed');
-        newEmbed.setFooter({ text: 'Party automatically closed after 2 hours' });
-        
-        // Remove all action buttons/components when closed
-        await message.edit({ embeds: [newEmbed], components: [] });
+        // Delete the message (this also deletes the thread)
+        await message.delete();
         
         // Remove from active parties tracking
         removeActiveParty(userId);
         
-        // Archive thread if exists
-        if (message.thread) {
-            try {
-                await message.thread.setLocked(true);
-                await message.thread.setArchived(true);
-            } catch (err) {
-                console.error('[Party] Failed to archive thread during auto-close:', err);
-            }
-        }
-        
         // Log auto-closure
-        const { logPartyClosure, clearPartyLogThreadCache } = await import('../../logging/party-logger.js');
-        const messageContent = message.content || '';
-        const partyNameMatch = messageContent.match(/\*\*Party:\*\*\s*([^\|]+)/);
-        const partyName = partyNameMatch ? partyNameMatch[1].trim() : 'Unknown Party';
+        const { logPartyClosure, clearPartyLogThreadCache } = await import('../logging/party-logger.js');
         
         try {
             await logPartyClosure(

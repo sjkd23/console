@@ -1,5 +1,5 @@
 import { ButtonInteraction, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { removeActiveParty } from '../../../lib/state/party-state.js';
+import { removeActiveParty, extendPartyLifetime } from '../../../lib/state/party-state.js';
 import { logBotEvent } from '../../../lib/logging/bot-logger.js';
 import { logPartyClosure, clearPartyLogThreadCache } from '../../../lib/logging/party-logger.js';
 import { hasRequiredRoleOrHigher } from '../../../lib/permissions/permissions.js';
@@ -9,15 +9,16 @@ import { hasRequiredRoleOrHigher } from '../../../lib/permissions/permissions.js
  * 
  * Handles button interactions for party finder posts.
  * Currently supports:
- * - Close: Allows party owner to close their party post
+ * - Close: Allows party owner or moderators to close and delete their party post
+ * - Extend: Allows party owner to extend party lifetime by 1 hour
  */
 
 /**
  * Handle party close button interaction
  * 
- * Validates that the user clicking the button is the party owner,
- * then updates the embed to show the party as closed, removes all
- * buttons, archives the thread, and removes the party from active tracking.
+ * Validates that the user clicking the button is the party owner or a moderator,
+ * then deletes the message (which also deletes the thread), and removes the party
+ * from active tracking.
  * 
  * @param interaction - The button interaction from Discord
  * @param creatorId - The Discord user ID of the party creator (from button custom ID)
@@ -39,15 +40,6 @@ export async function handlePartyClose(interaction: ButtonInteraction, creatorId
     }
 
     const message = interaction.message;
-    const embed = message.embeds[0];
-
-    if (!embed) {
-        await interaction.reply({ 
-            content: '❌ Could not find the party embed.', 
-            ephemeral: true 
-        });
-        return;
-    }
 
     try {
         // Extract party name from the message content (format: "**Party:** {name}")
@@ -55,27 +47,11 @@ export async function handlePartyClose(interaction: ButtonInteraction, creatorId
         const partyNameMatch = messageContent.match(/\*\*Party:\*\*\s*([^\|]+)/);
         const partyName = partyNameMatch ? partyNameMatch[1].trim() : 'Unknown Party';
 
-        // Update embed to show party as closed
-        const newEmbed = new EmbedBuilder(embed.toJSON());
-        newEmbed.setColor(0xED4245); // Red for Closed
-        newEmbed.setTitle('❌ Party Closed');
-
-        // Remove all action buttons/components when closed
-        await message.edit({ embeds: [newEmbed], components: [] });
+        // Delete the message (this also deletes the thread)
+        await message.delete();
         
         // Remove from active parties tracking
         removeActiveParty(creatorId);
-        
-        // Archive thread if exists
-        if (message.thread) {
-            try {
-                await message.thread.setLocked(true);
-                await message.thread.setArchived(true);
-            } catch (err) {
-                console.error('[Party] Failed to archive thread:', err);
-                // Non-critical error - continue with success response
-            }
-        }
 
         // Log party closure to raid-log channel thread
         if (interaction.guildId) {
@@ -127,13 +103,90 @@ export async function handlePartyClose(interaction: ButtonInteraction, creatorId
             });
         }
 
-        await interaction.reply({ content: '✅ Party closed successfully.', ephemeral: true });
+        await interaction.reply({ content: '✅ Party closed and deleted successfully.', ephemeral: true });
         
     } catch (err) {
         console.error('[Party] Error closing party:', err);
         
         // Try to respond with error
         const errorMsg = '❌ An error occurred while closing the party. Please try again.';
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: errorMsg, ephemeral: true });
+        } else {
+            await interaction.reply({ content: errorMsg, ephemeral: true });
+        }
+    }
+}
+
+/**
+ * Handle party extend button interaction
+ * 
+ * Validates that the user clicking the button is the party owner,
+ * then extends the party lifetime by 1 hour.
+ * 
+ * @param interaction - The button interaction from Discord
+ * @param creatorId - The Discord user ID of the party creator (from button custom ID)
+ */
+export async function handlePartyExtend(interaction: ButtonInteraction, creatorId: string) {
+    const isCreator = interaction.user.id === creatorId;
+    
+    // Only party owner can extend
+    if (!isCreator) {
+        await interaction.reply({ 
+            content: '❌ Only the party owner can extend this party.', 
+            ephemeral: true 
+        });
+        return;
+    }
+
+    try {
+        // Extend the party lifetime
+        const extended = extendPartyLifetime(creatorId);
+        
+        if (!extended) {
+            await interaction.reply({
+                content: '❌ Could not extend party. It may have already been closed.',
+                ephemeral: true
+            });
+            return;
+        }
+
+        // Extract party name for logging
+        const messageContent = interaction.message.content || '';
+        const partyNameMatch = messageContent.match(/\*\*Party:\*\*\s*([^\|]+)/);
+        const partyName = partyNameMatch ? partyNameMatch[1].trim() : 'Unknown Party';
+
+        // Log to bot-log channel (brief notification)
+        if (interaction.guildId) {
+            await logBotEvent(
+                interaction.client,
+                interaction.guildId,
+                '⏰ Party Extended',
+                `Party extended by <@${interaction.user.id}>`,
+                {
+                    color: 0x57F287, // Green
+                    fields: [
+                        { name: 'Party Name', value: partyName, inline: true },
+                        { name: 'Extension', value: '+1 hour', inline: true },
+                        { name: 'Channel', value: `<#${interaction.channelId}>`, inline: true }
+                    ]
+                }
+            ).catch(err => {
+                console.error('[Party] Failed to log party extension to bot-log:', err);
+                // Non-critical error - don't fail the operation
+            });
+        }
+
+        await interaction.reply({ 
+            content: '✅ Party lifetime extended by **1 hour**.', 
+            ephemeral: true 
+        });
+        
+    } catch (err) {
+        console.error('[Party] Error extending party:', err);
+        
+        // Try to respond with error
+        const errorMsg = '❌ An error occurred while extending the party. Please try again.';
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp({ content: errorMsg, ephemeral: true });
         } else {

@@ -31,7 +31,7 @@ import { handleHeadcountKey } from './interactions/buttons/raids/headcount-key.j
 import { handleHeadcountOrganizerPanel, handleHeadcountOrganizerPanelConfirm, handleHeadcountOrganizerPanelDeny } from './interactions/buttons/raids/headcount-organizer-panel.js';
 import { handleHeadcountEnd } from './interactions/buttons/raids/headcount-end.js';
 import { handleHeadcountConvert } from './interactions/buttons/raids/headcount-convert.js';
-import { handlePartyClose } from './interactions/buttons/raids/party-actions.js';
+import { handlePartyClose, handlePartyExtend } from './interactions/buttons/raids/party-actions.js';
 import {
     handleQuotaConfigBasic,
     handleQuotaConfigModeration,
@@ -120,6 +120,9 @@ const client = new Client({
     ],
     partials: [Partials.Channel, Partials.GuildMember, Partials.User]
 });
+
+// Export client for use in other modules (e.g., party-state.ts)
+export { client };
 
 client.once(Events.ClientReady, () => {
     console.log(`Logged in as ${client.user?.tag}`);
@@ -221,6 +224,12 @@ client.on('interactionCreate', async (interaction) => {
                 if (!await applyButtonRateLimit(interaction, 'party:close')) return;
                 const creatorId = interaction.customId.split(':')[2];
                 await safeHandleInteraction(interaction, () => handlePartyClose(interaction, creatorId), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('party:extend:')) {
+                if (!await applyButtonRateLimit(interaction, 'party:extend')) return;
+                const creatorId = interaction.customId.split(':')[2];
+                await safeHandleInteraction(interaction, () => handlePartyExtend(interaction, creatorId), { ephemeral: true });
                 return;
             }
 
