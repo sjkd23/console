@@ -187,14 +187,49 @@ export const runCreate: SlashCommand = {
                 });
             }
 
-            // Reply immediately with the run link (before reactions are added)
+            // Reply immediately with the run link
             await interaction.editReply(
                 `Run created${sent ? ` and posted: ${sent.url}` : ''}`
             );
 
-            // Send early-loc notification if party/location were set during creation
-            if (earlyLocNotification) {
-                sendEarlyLocNotification(
+            // Show the organizer panel IMMEDIATELY as a followUp
+            // This uses the shared helper which registers the panel for live updates
+            // The panel will auto-refresh when auto-join completes
+            await sendRunOrganizerPanelAsFollowUp(interaction, runId, guild.id);
+
+            // Run all background tasks in parallel (don't block the user experience)
+            // These will complete after the panel is already visible to the user
+            Promise.all([
+                // Auto-join organizer (updates DB, assigns role, updates embed)
+                autoJoinOrganizerToRun(
+                    interaction.client,
+                    guild,
+                    sent,
+                    runId,
+                    interaction.user.id,
+                    interaction.user.username,
+                    d.codeName,
+                    d.dungeonName,
+                    role?.id || null
+                ).catch(err => {
+                    logger.error('Failed to auto-join organizer to run', { 
+                        err, guildId: guild.id, runId 
+                    });
+                }),
+                
+                // Add reactions to the run message
+                addRunReactions(sent, d.codeName).catch(err => {
+                    logger.error('Failed to add reactions to run message', {
+                        guildId: guild.id,
+                        runId: runId,
+                        messageId: sent.id,
+                        dungeonKey: d.codeName,
+                        error: err instanceof Error ? err.message : String(err)
+                    });
+                }),
+                
+                // Send early-loc notification if party/location were set
+                earlyLocNotification ? sendEarlyLocNotification(
                     interaction.client,
                     guild.id,
                     interaction.user.id,
@@ -204,43 +239,16 @@ export const runCreate: SlashCommand = {
                     sent.id,
                     earlyLocNotification
                 ).catch(err => {
-                    logger.error({ err, guildId: guild.id, runId }, 
-                        'Failed to send early-loc notification');
+                    logger.error('Failed to send early-loc notification', { 
+                        err, guildId: guild.id, runId 
+                    });
+                }) : Promise.resolve()
+            ]).catch(err => {
+                // Catch any unhandled errors in the parallel batch
+                logger.error('Error in background tasks after run creation', { 
+                    err, guildId: guild.id, runId 
                 });
-            }
-
-            // Automatically add the organizer to their run (simulates clicking join button)
-            // This happens after the message is posted but before the organizer panel
-            await autoJoinOrganizerToRun(
-                interaction.client,
-                guild,
-                sent,
-                runId,
-                interaction.user.id,
-                interaction.user.username,
-                d.codeName,
-                d.dungeonName,
-                role?.id || null
-            );
-
-            // Show the organizer panel automatically as a followUp
-            // This uses the shared helper which registers the panel for live updates
-            await sendRunOrganizerPanelAsFollowUp(interaction, runId, guild.id);
-
-            // Add reactions to the run message based on dungeon configuration
-            // This happens AFTER the user gets their response, so it doesn't delay the feedback
-            try {
-                await addRunReactions(sent, d.codeName);
-            } catch (e) {
-                logger.error('Failed to add reactions to run message', {
-                    guildId: guild.id,
-                    runId: runId,
-                    messageId: sent.id,
-                    dungeonKey: d.codeName,
-                    error: e instanceof Error ? e.message : String(e)
-                });
-                // Don't fail the command if reactions fail - continue with run creation
-            }
+            });
 
             // Log the run creation to raid-log channel
             try {

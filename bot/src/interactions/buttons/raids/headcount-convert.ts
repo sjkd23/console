@@ -36,6 +36,8 @@ import { buildRunOrganizerPanelContent } from './organizer-panel.js';
 import { buildRunEmbed, buildRunButtons } from '../../../lib/utilities/run-panel-builder.js';
 import { autoJoinOrganizerToRun } from '../../../lib/utilities/auto-join-helpers.js';
 
+const logger = createLogger('HeadcountConvert');
+
 export async function handleHeadcountConvert(btn: ButtonInteraction, publicMessageId: string) {
     // CRITICAL: Wrap in mutex to prevent concurrent conversion
     const executed = await withButtonLock(btn, getHeadcountLockKey('convert', publicMessageId), async () => {
@@ -390,34 +392,6 @@ async function convertHeadcountToRun(
     // This prevents the "multiple runs" error when using /taken after converting a headcount
     unregisterHeadcount(interaction.guild.id, organizerId);
 
-    // Automatically add the organizer to their converted run
-    // This simulates clicking the join button - adds to raiders table, assigns role, updates embed
-    await autoJoinOrganizerToRun(
-        interaction.client,
-        interaction.guild,
-        newRunMessage,
-        runId,
-        organizerId,
-        interaction.user.username,
-        dungeon.codeName,
-        dungeon.dungeonName,
-        role?.id || null
-    );
-
-    // Build the run organizer panel using the shared function
-    // This ensures consistency with /run command and shows headcount keys properly
-    const panelContent = await buildRunOrganizerPanelContent(runId, interaction.guild.id);
-    
-    if (!panelContent) {
-        // Run doesn't exist or has ended (shouldn't happen, but handle gracefully)
-        await interaction.editReply({
-            content: '❌ Failed to create organizer panel for the converted run.',
-            embeds: [],
-            components: []
-        });
-        return;
-    }
-
     // Show success message first
     const raidPanelUrl = `https://discord.com/channels/${interaction.guild.id}/${newRunMessage.channelId}/${newRunMessage.id}`;
     const successEmbed = new EmbedBuilder()
@@ -440,20 +414,45 @@ async function convertHeadcountToRun(
         });
     }
 
-    // Send the run organizer panel as a follow-up
-    // Uses the same content as the /run command auto-popup
-    const panelMessage = await interaction.followUp({
-        embeds: panelContent.embeds,
-        components: panelContent.components,
-        flags: MessageFlags.Ephemeral,
-        fetchReply: true
-    });
+    // Build and show the run organizer panel IMMEDIATELY
+    // This ensures consistency with /run command and feels responsive
+    const panelContent = await buildRunOrganizerPanelContent(runId, interaction.guild.id);
+    
+    if (panelContent) {
+        // Send the run organizer panel as a follow-up
+        const panelMessage = await interaction.followUp({
+            embeds: panelContent.embeds,
+            components: panelContent.components,
+            flags: MessageFlags.Ephemeral,
+            fetchReply: true
+        });
 
-    // Register this panel for auto-refresh using a followup handle
-    // This is the correct way to track ephemeral follow-ups for live updates
-    registerOrganizerPanel(runId.toString(), interaction.user.id, {
-        type: 'followup',
-        webhook: interaction.webhook,
-        messageId: panelMessage.id
+        // Register this panel for auto-refresh using a followup handle
+        // This is the correct way to track ephemeral follow-ups for live updates
+        registerOrganizerPanel(runId.toString(), interaction.user.id, {
+            type: 'followup',
+            webhook: interaction.webhook,
+            messageId: panelMessage.id
+        });
+    }
+
+    // Run auto-join in the background (don't block the user experience)
+    // This will complete after the panel is already visible
+    autoJoinOrganizerToRun(
+        interaction.client,
+        interaction.guild,
+        newRunMessage,
+        runId,
+        organizerId,
+        interaction.user.username,
+        dungeon.codeName,
+        dungeon.dungeonName,
+        role?.id || null
+    ).catch(err => {
+        logger.error('Failed to auto-join organizer to converted run', {
+            guildId: interaction.guild.id,
+            runId,
+            error: err instanceof Error ? err.message : String(err)
+        });
     });
 }

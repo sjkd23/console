@@ -495,45 +495,13 @@ async function createHeadcountPanel(
                 selectedDungeons.map(d => d.dungeonName)
             );
 
-            // Log the headcount creation to raid-log channel
-            const panelTimestamp = Date.now().toString();
-            try {
-                await logRaidCreation(
-                    interaction.client,
-                    {
-                        guildId: guild.id,
-                        organizerId: interaction.user.id,
-                        organizerUsername: interaction.user.username,
-                        dungeonName: selectedDungeons.map(d => d.dungeonName).join(', '),
-                        type: 'headcount',
-                        panelTimestamp: sent.id // Use message ID as unique identifier
-                    }
-                );
-            } catch (e) {
-                console.error('Failed to log headcount creation to raid-log:', e);
-            }
-
         // Confirm to organizer
         await interaction.editReply({
             content: `✅ Headcount created: ${sent.url}`,
             components: []
         });
 
-        // Automatically add the organizer to their headcount (simulates clicking join button)
-        // This happens after the message is posted but before the organizer panel
-        await autoJoinOrganizerToHeadcount(
-            interaction.client,
-            guild,
-            sent,
-            interaction.user.id,
-            interaction.user.username,
-            selectedDungeons.map(d => d.dungeonName),
-            sent.id // Use message ID as panel timestamp
-        );
-
-        // Show the organizer panel automatically as a followUp
-        // This allows the organizer to immediately manage the headcount
-        // Extract dungeon codes from the button components for the auto-popup panel
+        // Extract dungeon codes for the organizer panel (needed now)
         const dungeonCodes: string[] = [];
         for (const row of sent.components) {
             if ('components' in row) {
@@ -549,7 +517,55 @@ async function createHeadcountPanel(
             }
         }
         
+        // Show the organizer panel IMMEDIATELY as a followUp
+        // This allows the organizer to see the panel right away
+        // The panel will auto-refresh when auto-join completes
         await sendHeadcountOrganizerPanelAsFollowUp(interaction, sent, embed, dungeonCodes);
+
+        // Run background tasks in parallel (don't block the user experience)
+        // These will complete after the panel is already visible
+        Promise.all([
+            // Auto-join organizer (updates embed)
+            autoJoinOrganizerToHeadcount(
+                interaction.client,
+                guild,
+                sent,
+                interaction.user.id,
+                interaction.user.username,
+                selectedDungeons.map(d => d.dungeonName),
+                sent.id // Use message ID as panel timestamp
+            ).catch(err => {
+                logger.error('Failed to auto-join organizer to headcount', {
+                    guildId: guild.id,
+                    messageId: sent.id,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+            }),
+            
+            // Log to raid-log channel
+            logRaidCreation(
+                interaction.client,
+                {
+                    guildId: guild.id,
+                    organizerId: interaction.user.id,
+                    organizerUsername: interaction.user.username,
+                    dungeonName: selectedDungeons.map(d => d.dungeonName).join(', '),
+                    type: 'headcount',
+                    panelTimestamp: sent.id // Use message ID as unique identifier
+                }
+            ).catch(err => {
+                logger.error('Failed to log headcount creation to raid-log', {
+                    guildId: guild.id,
+                    messageId: sent.id,
+                    error: err instanceof Error ? err.message : String(err)
+                });
+            })
+        ]).catch(err => {
+            // Catch any unhandled errors in the parallel batch
+            logger.error('Error in background tasks after headcount creation', { 
+                err, guildId: guild.id, messageId: sent.id 
+            });
+        });
 
     } catch (err) {
         // Error creating headcount
