@@ -68,7 +68,7 @@ function determineCommandRateLimit(command: SlashCommand): RateLimitConfig {
     // Heavy/expensive commands
     if (commandName === 'stats' || 
         commandName === 'leaderboard' ||
-        commandName === 'checkpunishments') {
+        commandName === 'find') {
         return RateLimitPresets.COMMAND_HEAVY;
     }
 

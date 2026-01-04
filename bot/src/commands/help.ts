@@ -133,18 +133,18 @@ function getCommandHelp(commandName: string): CommandHelp | null {
             usage: '/unmute member:<user> reason:<text>',
             examples: ['/unmute member:@User reason:Appealed - Remove mute'],
         },
-        checkpunishments: {
-            name: 'checkpunishments',
-            description: 'View complete punishment history for a member, including warnings, suspensions, and notes.',
-            usage: '/checkpunishments member:<user> [active_only:<true/false>]',
+        find: {
+            name: 'find',
+            description: 'Find and view detailed information about a member including verification status, punishments, and notes.',
+            usage: '/find member:<user> [active_only:<true/false>]',
             examples: [
-                '/checkpunishments member:@User - View all punishments',
-                '/checkpunishments member:@User active_only:true - View only active punishments',
+                '/find member:@User - View all information for a user',
+                '/find member:@User active_only:true - View only active punishments',
             ],
         },
         removepunishment: {
             name: 'removepunishment',
-            description: 'Remove a punishment or note from records by ID. Get IDs from /checkpunishments.',
+            description: 'Remove a punishment or note from records by ID. Get IDs from /find.',
             usage: '/removepunishment id:<punishment_id> reason:<text>',
             examples: ['/removepunishment id:abc123... reason:Issued in error - Remove a punishment'],
         },

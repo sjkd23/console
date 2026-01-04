@@ -100,7 +100,7 @@ export const addnote: SlashCommand = {
                         { name: 'Added By', value: `<@${interaction.user.id}>`, inline: true },
                         { name: 'Note', value: noteText }
                     )
-                    .setFooter({ text: '💡 Use /checkpunishments to view all notes and punishments for a member' })
+                    .setFooter({ text: '💡 Use /find to view all notes and punishments for a member' })
                     .setTimestamp();
 
                 await interaction.editReply({ embeds: [responseEmbed] });

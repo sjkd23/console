@@ -1,4 +1,4 @@
-// bot/src/commands/checkpunishments.ts
+// bot/src/commands/find.ts
 import {
     SlashCommandBuilder,
     ChatInputCommandInteraction,
@@ -12,120 +12,216 @@ import {
     ButtonInteraction,
 } from 'discord.js';
 import type { SlashCommand } from '../../_types.js';
-import { getUserPunishments, getUserNotes, BackendError } from '../../../lib/utilities/http.js';
+import { getUserPunishments, getUserNotes, getRaider, BackendError } from '../../../lib/utilities/http.js';
+
+type TabMode = 'userinfo' | 'punishments' | 'notes';
 
 /**
- * Create pagination buttons with mode toggle for checkpunishments
+ * Create tab navigation buttons for find command
  */
-function createCheckPunishmentsButtons(
-    currentPage: number,
-    totalPages: number,
-    mode: 'punishments' | 'notes',
+function createFindButtons(
+    mode: TabMode,
     hasNotes: boolean,
     hasPunishments: boolean,
+    currentPage: number,
+    totalPages: number,
     disabled = false
 ): ActionRowBuilder<ButtonBuilder>[] {
-    const navigationRow = new ActionRowBuilder<ButtonBuilder>();
+    const tabRow = new ActionRowBuilder<ButtonBuilder>();
+    
+    // Tab buttons
+    tabRow.addComponents(
+        new ButtonBuilder()
+            .setCustomId('find_tab_userinfo')
+            .setLabel('User Info')
+            .setStyle(mode === 'userinfo' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            .setDisabled(disabled || mode === 'userinfo'),
+        new ButtonBuilder()
+            .setCustomId('find_tab_punishments')
+            .setLabel('Punishments')
+            .setStyle(mode === 'punishments' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            .setDisabled(disabled || mode === 'punishments' || !hasPunishments),
+        new ButtonBuilder()
+            .setCustomId('find_tab_notes')
+            .setLabel('Notes')
+            .setStyle(mode === 'notes' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+            .setDisabled(disabled || mode === 'notes' || !hasNotes)
+    );
 
+    // If we're in userinfo mode, no pagination needed
+    if (mode === 'userinfo') {
+        const stopRow = new ActionRowBuilder<ButtonBuilder>();
+        stopRow.addComponents(
+            new ButtonBuilder()
+                .setCustomId('find_stop')
+                .setLabel('Stop')
+                .setStyle(ButtonStyle.Danger)
+                .setDisabled(disabled)
+        );
+        return [tabRow, stopRow];
+    }
+
+    // For punishments/notes, add pagination
+    const navigationRow = new ActionRowBuilder<ButtonBuilder>();
     navigationRow.addComponents(
         new ButtonBuilder()
-            .setCustomId('cp_first')
+            .setCustomId('find_first')
             .setEmoji('⏮️')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(disabled || currentPage === 0 || totalPages === 0),
         new ButtonBuilder()
-            .setCustomId('cp_prev')
+            .setCustomId('find_prev')
             .setEmoji('◀️')
             .setStyle(ButtonStyle.Primary)
             .setDisabled(disabled || currentPage === 0 || totalPages === 0),
         new ButtonBuilder()
-            .setCustomId('cp_page')
+            .setCustomId('find_page')
             .setLabel(totalPages > 0 ? `${currentPage + 1} / ${totalPages}` : '0 / 0')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
         new ButtonBuilder()
-            .setCustomId('cp_next')
+            .setCustomId('find_next')
             .setEmoji('▶️')
             .setStyle(ButtonStyle.Primary)
             .setDisabled(disabled || currentPage === totalPages - 1 || totalPages === 0),
         new ButtonBuilder()
-            .setCustomId('cp_last')
+            .setCustomId('find_last')
             .setEmoji('⏭️')
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(disabled || currentPage === totalPages - 1 || totalPages === 0)
     );
 
-    const toggleRow = new ActionRowBuilder<ButtonBuilder>();
-    
-    // Only show toggle if both punishments and notes exist
-    if (hasPunishments && hasNotes) {
-        toggleRow.addComponents(
-            new ButtonBuilder()
-                .setCustomId('cp_toggle')
-                .setLabel(mode === 'punishments' ? 'View Notes' : 'View Punishments')
-                .setStyle(ButtonStyle.Success)
-                .setDisabled(disabled),
-            new ButtonBuilder()
-                .setCustomId('cp_stop')
-                .setLabel('Stop')
-                .setStyle(ButtonStyle.Danger)
-                .setDisabled(disabled)
-        );
-        return [navigationRow, toggleRow];
-    }
-
-    // If only one mode exists, still show stop button
-    navigationRow.addComponents(
+    const stopRow = new ActionRowBuilder<ButtonBuilder>();
+    stopRow.addComponents(
         new ButtonBuilder()
-            .setCustomId('cp_stop')
+            .setCustomId('find_stop')
             .setLabel('Stop')
             .setStyle(ButtonStyle.Danger)
             .setDisabled(disabled)
     );
 
-    return [navigationRow];
+    return [tabRow, navigationRow, stopRow];
 }
 
 /**
- * Setup pagination with mode toggle for checkpunishments
+ * Create the User Info embed
  */
-async function setupCheckPunishmentsPagination(
+async function createUserInfoEmbed(
+    interaction: ChatInputCommandInteraction,
+    targetUser: { id: string; username: string; displayAvatarURL: (options?: any) => string },
+    raiderData: Awaited<ReturnType<typeof getRaider>>,
+    hasPunishments: boolean,
+    hasNotes: boolean
+): Promise<EmbedBuilder> {
+    // Get guild member to check for nickname and roles
+    const member = await interaction.guild!.members.fetch(targetUser.id).catch(() => null);
+    
+    // Get server nickname (or username if no nickname)
+    const displayName = member?.displayName || targetUser.username;
+    
+    // Get highest role (exclude @everyone)
+    const roles = member?.roles.cache.filter(r => r.id !== interaction.guildId).sort((a, b) => b.position - a.position);
+    const highestRole = roles?.first();
+    
+    // Check if user has an active suspension
+    let isSuspended = false;
+    try {
+        const { punishments } = await getUserPunishments(
+            interaction.guildId!,
+            targetUser.id,
+            true // active only
+        );
+        isSuspended = punishments.some(p => p.type === 'suspend' && p.active);
+    } catch {
+        // If we can't check, assume not suspended
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle(`Find Query Success: ${raiderData?.ign || 'Not Verified'}`)
+        .setColor(0x3498db)
+        .setThumbnail(targetUser.displayAvatarURL({ size: 128 }));
+
+    // Build description
+    let description = `**${displayName}**\n\n`;
+    
+    if (raiderData) {
+        description += `Found <@${targetUser.id}> with IGN(s): **${raiderData.ign}**`;
+        if (raiderData.alt_ign) {
+            description += `, **${raiderData.alt_ign}**`;
+        }
+        description += '\n';
+    } else {
+        description += `Found <@${targetUser.id}> - **Not Verified**\n`;
+    }
+    
+    description += `Suspended: ${isSuspended ? '✅' : '❌'}\n\n`;
+    
+    if (highestRole) {
+        description += `**Highest Role**\n<@&${highestRole.id}>`;
+    } else {
+        description += `**Highest Role**\nNone`;
+    }
+
+    embed.setDescription(description);
+    
+    // Add footer with additional info
+    let footerText = '';
+    if (hasPunishments) {
+        footerText += 'Has punishments';
+    }
+    if (hasNotes) {
+        footerText += hasPunishments ? ' • Has notes' : 'Has notes';
+    }
+    if (footerText) {
+        embed.setFooter({ text: footerText });
+    }
+    
+    embed.setTimestamp();
+
+    return embed;
+}
+
+/**
+ * Setup tab navigation with pagination for find command
+ */
+async function setupFindNavigation(
     interaction: ChatInputCommandInteraction,
     options: {
+        targetUser: { id: string; username: string; displayAvatarURL: (options?: any) => string };
+        raiderData: Awaited<ReturnType<typeof getRaider>>;
         punishmentEmbeds: EmbedBuilder[];
         noteEmbeds: EmbedBuilder[];
         userId: string;
         timeout?: number;
     }
 ): Promise<void> {
-    const { punishmentEmbeds, noteEmbeds, userId, timeout = 600000 } = options;
+    const { targetUser, raiderData, punishmentEmbeds, noteEmbeds, userId, timeout = 600000 } = options;
 
-    let mode: 'punishments' | 'notes' = 'punishments';
+    let mode: TabMode = 'userinfo';
     let currentPage = 0;
 
     const hasPunishments = punishmentEmbeds.length > 0;
     const hasNotes = noteEmbeds.length > 0;
 
-    // Start with whichever has content
-    if (!hasPunishments && hasNotes) {
-        mode = 'notes';
-    }
-
-    const getCurrentEmbeds = () => mode === 'punishments' ? punishmentEmbeds : noteEmbeds;
+    const getCurrentEmbeds = () => {
+        if (mode === 'userinfo') return [];
+        return mode === 'punishments' ? punishmentEmbeds : noteEmbeds;
+    };
     const getTotalPages = () => getCurrentEmbeds().length;
 
-    // Send initial message
-    const currentEmbeds = getCurrentEmbeds();
-    const totalPages = getTotalPages();
+    // Create initial user info embed
+    const userInfoEmbed = await createUserInfoEmbed(
+        interaction,
+        targetUser,
+        raiderData,
+        hasPunishments,
+        hasNotes
+    );
 
-    if (totalPages === 0) {
-        // This shouldn't happen as we check before calling this function
-        return;
-    }
-
+    // Send initial message (User Info tab)
     const message = await interaction.editReply({
-        embeds: [currentEmbeds[currentPage]],
-        components: createCheckPunishmentsButtons(currentPage, totalPages, mode, hasNotes, hasPunishments),
+        embeds: [userInfoEmbed],
+        components: createFindButtons(mode, hasNotes, hasPunishments, 0, 0),
     });
 
     // Create collector for button interactions
@@ -134,19 +230,19 @@ async function setupCheckPunishmentsPagination(
             // Only allow the user who invoked the command to use buttons
             if (i.user.id !== userId) {
                 i.reply({
-                    content: '❌ You cannot use these buttons. Use `/checkpunishments` to view your own results.',
+                    content: '❌ You cannot use these buttons. Use `/find` to view your own results.',
                     ephemeral: true,
                 }).catch(() => {});
                 return false;
             }
-            return i.customId.startsWith('cp_');
+            return i.customId.startsWith('find_');
         },
         time: timeout,
     });
 
     collector.on('collect', async (buttonInteraction: ButtonInteraction) => {
         // Handle stop button - remove all buttons
-        if (buttonInteraction.customId === 'cp_stop') {
+        if (buttonInteraction.customId === 'find_stop') {
             collector.stop('stopped');
             await buttonInteraction.update({
                 components: [],
@@ -156,36 +252,50 @@ async function setupCheckPunishmentsPagination(
 
         let needsUpdate = false;
 
-        // Handle mode toggle
-        if (buttonInteraction.customId === 'cp_toggle') {
-            mode = mode === 'punishments' ? 'notes' : 'punishments';
-            currentPage = 0; // Reset to first page when switching modes
-            needsUpdate = true;
+        // Handle tab switches
+        if (buttonInteraction.customId === 'find_tab_userinfo') {
+            if (mode !== 'userinfo') {
+                mode = 'userinfo';
+                currentPage = 0;
+                needsUpdate = true;
+            }
+        } else if (buttonInteraction.customId === 'find_tab_punishments') {
+            if (mode !== 'punishments') {
+                mode = 'punishments';
+                currentPage = 0;
+                needsUpdate = true;
+            }
+        } else if (buttonInteraction.customId === 'find_tab_notes') {
+            if (mode !== 'notes') {
+                mode = 'notes';
+                currentPage = 0;
+                needsUpdate = true;
+            }
         }
-        // Handle navigation
-        else {
+        // Handle navigation (only for punishments/notes tabs)
+        else if (mode !== 'userinfo') {
             const totalPages = getTotalPages();
             
             switch (buttonInteraction.customId) {
-                case 'cp_first':
+                case 'find_first':
                     if (currentPage !== 0) {
                         currentPage = 0;
                         needsUpdate = true;
                     }
                     break;
-                case 'cp_prev':
+                case 'find_prev':
                     if (currentPage > 0) {
                         currentPage = Math.max(0, currentPage - 1);
                         needsUpdate = true;
                     }
                     break;
-                case 'cp_next':
+                case 'find_next':
                     if (currentPage < totalPages - 1) {
                         currentPage = Math.min(totalPages - 1, currentPage + 1);
                         needsUpdate = true;
                     }
                     break;
-                case 'cp_last':
+                case 'find_last':
                     if (currentPage !== totalPages - 1) {
                         currentPage = totalPages - 1;
                         needsUpdate = true;
@@ -195,13 +305,27 @@ async function setupCheckPunishmentsPagination(
         }
 
         if (needsUpdate) {
-            const currentEmbeds = getCurrentEmbeds();
+            let embedToShow: EmbedBuilder;
+            
+            if (mode === 'userinfo') {
+                embedToShow = await createUserInfoEmbed(
+                    interaction,
+                    targetUser,
+                    raiderData,
+                    hasPunishments,
+                    hasNotes
+                );
+            } else {
+                const currentEmbeds = getCurrentEmbeds();
+                embedToShow = currentEmbeds[currentPage];
+            }
+
             const totalPages = getTotalPages();
 
-            // Update message with new page/mode
+            // Update message with new tab/page
             await buttonInteraction.update({
-                embeds: [currentEmbeds[currentPage]],
-                components: createCheckPunishmentsButtons(currentPage, totalPages, mode, hasNotes, hasPunishments),
+                embeds: [embedToShow],
+                components: createFindButtons(mode, hasNotes, hasPunishments, currentPage, totalPages),
             });
         } else {
             // Acknowledge the interaction even if nothing changed
@@ -215,11 +339,11 @@ async function setupCheckPunishmentsPagination(
             try {
                 const totalPages = getTotalPages();
                 await interaction.editReply({
-                    components: createCheckPunishmentsButtons(currentPage, totalPages, mode, hasNotes, hasPunishments, true),
+                    components: createFindButtons(mode, hasNotes, hasPunishments, currentPage, totalPages, true),
                 });
             } catch (err) {
                 // Message might have been deleted
-                console.warn('[CheckPunishments] Failed to disable buttons:', err);
+                console.warn('[Find] Failed to disable buttons:', err);
             }
         }
     });
@@ -227,18 +351,18 @@ async function setupCheckPunishmentsPagination(
 
 
 /**
- * /checkpunishments - View punishment history for a user
- * Moderator-only command with paginated embed navigation
+ * /find - Find and view detailed information about a user
+ * Security+ command with user info, punishment history, and notes
  */
-export const checkpunishments: SlashCommand = {
+export const find: SlashCommand = {
     requiredRole: 'security',
     data: new SlashCommandBuilder()
-        .setName('checkpunishments')
-        .setDescription('View punishment history for a member (Moderator only)')
+        .setName('find')
+        .setDescription('Find and view detailed information about a member (Security+ only)')
         .addUserOption(option =>
             option
                 .setName('member')
-                .setDescription('The member to check punishments for')
+                .setDescription('The member to find')
                 .setRequired(true)
         )
         .addBooleanOption(option =>
@@ -268,8 +392,10 @@ export const checkpunishments: SlashCommand = {
             const activeOnly = interaction.options.getBoolean('active_only') ?? false;
 
             try {
+                // Fetch raider data
+                const raiderData = await getRaider(interaction.guildId, targetUser.id);
+
                 // Fetch punishments from backend
-                // Only pass activeOnly if it's explicitly true, otherwise get all punishments
                 const result = await getUserPunishments(
                     interaction.guildId,
                     targetUser.id,
@@ -282,23 +408,11 @@ export const checkpunishments: SlashCommand = {
                 const notesResult = await getUserNotes(interaction.guildId, targetUser.id);
                 const { notes } = notesResult;
 
-                if (punishments.length === 0 && notes.length === 0) {
-                    const embed = new EmbedBuilder()
-                        .setTitle('📋 Punishment History')
-                        .setDescription(`<@${targetUser.id}> has no ${activeOnly ? 'active ' : ''}punishments or notes on record.`)
-                        .setColor(0x00ff00)
-                        .setFooter({ text: `Requested by ${interaction.user.tag}` })
-                        .setTimestamp();
-
-                    await interaction.editReply({ embeds: [embed] });
-                    return;
-                }
-
                 // Create one embed per punishment (newest first)
-                const embeds = punishments.map((punishment, index) => {
+                const punishmentEmbeds = punishments.map((punishment, index) => {
                     const isWarn = punishment.type === 'warn';
                     const isSuspension = punishment.type === 'suspend';
-                    const typeIcon = isWarn ? '⚠️' : '�';
+                    const typeIcon = isWarn ? '⚠️' : '🔨';
                     const typeName = isWarn ? 'Warning' : 'Suspension';
                     
                     // Determine status for suspensions
@@ -560,7 +674,6 @@ export const checkpunishments: SlashCommand = {
                     });
 
                     // Footer with navigation info
-                    const totalItems = punishments.length + notes.length;
                     let footerText = `Note ${index + 1} of ${notes.length}`;
                     
                     if (punishments.length > 0) {
@@ -573,19 +686,18 @@ export const checkpunishments: SlashCommand = {
                     return embed;
                 });
 
-                // Combine punishment embeds and note embeds
-                const allEmbeds = [...embeds, ...noteEmbeds];
-
-                // Setup custom pagination with mode toggle
-                await setupCheckPunishmentsPagination(interaction, {
-                    punishmentEmbeds: embeds,
+                // Setup tab navigation
+                await setupFindNavigation(interaction, {
+                    targetUser: targetUser,
+                    raiderData: raiderData,
+                    punishmentEmbeds: punishmentEmbeds,
                     noteEmbeds: noteEmbeds,
                     userId: interaction.user.id,
                     timeout: 600000, // 10 minutes
                 });
 
             } catch (err) {
-                let errorMessage = '❌ **Failed to retrieve punishments**\n\n';
+                let errorMessage = '❌ **Failed to retrieve user information**\n\n';
 
                 if (err instanceof BackendError) {
                     switch (err.code) {
@@ -606,7 +718,7 @@ export const checkpunishments: SlashCommand = {
                             errorMessage += 'Please try again or contact an administrator if the problem persists.';
                     }
                 } else {
-                    console.error('[CheckPunishments] Unexpected error:', err);
+                    console.error('[Find] Unexpected error:', err);
                     errorMessage += 'An unexpected error occurred. Please try again later.';
                 }
 
@@ -620,7 +732,7 @@ export const checkpunishments: SlashCommand = {
                     await interaction.reply({ content: '❌ Something went wrong.', flags: MessageFlags.Ephemeral });
                 }
             } catch { }
-            console.error('[CheckPunishments] Unhandled error:', unhandled);
+            console.error('[Find] Unhandled error:', unhandled);
         }
     },
 };

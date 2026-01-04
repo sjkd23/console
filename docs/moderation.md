@@ -35,7 +35,7 @@ The moderation system provides:
 - Creates punishment record in database
 - Logged to `punishment_log` channel
 - No role changes or restrictions
-- Visible in `/checkpunishments`
+- Visible in `/find`
 
 **Use when:**
 - First offense for minor rule violation
@@ -173,20 +173,19 @@ The `muted` role must be configured in Discord to deny:
 
 ## Managing Punishments
 
-### Check Punishment History
+### Check User Information
 
-**View all punishments for a member:**
+**View user info, punishments, and notes:**
 
 ```
-/checkpunishments
+/find
   member: @User
 ```
 
 **Interactive panel shows:**
-- All warnings (active and expired)
-- All suspensions (active and expired)
-- All mutes (active and expired)
-- Staff notes (toggle view)
+- **User Info Tab (default):** Avatar, nickname, IGN(s), suspension status, highest role
+- **Punishments Tab:** All warnings and suspensions (active and expired)
+- **Notes Tab:** Staff notes
 - Pagination for long histories
 - Who issued each punishment
 - When issued and when expires
@@ -260,7 +259,7 @@ The `muted` role must be configured in Discord to deny:
 **Effects:**
 - Stores note in database
 - Visible to Security+ staff
-- Appears in `/checkpunishments` under "Notes" tab
+- Appears in `/find` under "Notes" tab
 - Logged for audit trail
 
 **Use for:**
@@ -273,7 +272,7 @@ The `muted` role must be configured in Discord to deny:
 
 ### View Notes
 
-Notes are visible in `/checkpunishments` — toggle between "Punishments" and "Notes" view.
+Notes are visible in `/find` — switch to the "Notes" tab.
 
 **No separate delete command** — notes are permanent unless database admin removes them.
 
@@ -618,7 +617,7 @@ Auto-removed by: System
 
 1. **Always provide detailed reasons** — helps with appeals and audits
 2. **Start with warnings** — escalate gradually
-3. **Check punishment history first** — `/checkpunishments`
+3. **Check punishment history first** — `/find`
 4. **Document everything in notes** — context matters
 5. **Communicate with team** — discuss unclear cases
 
@@ -765,9 +764,9 @@ Moderation system is working when:
 - ✅ `/suspend` assigns role and auto-removes after duration
 - ✅ `/mute` works similarly to suspend
 - ✅ Expired punishments auto-clear every 5 minutes
-- ✅ `/checkpunishments` shows full history with pagination
+- ✅ `/find` shows full user info with punishments and notes
 - ✅ Modmail tickets create forum threads
 - ✅ `/purge` deletes messages with rate limiting
 - ✅ All actions logged to `punishment_log` channel
 
-**Common moderation commands:** `/warn`, `/suspend`, `/mute`, `/kick`, `/ban`, `/checkpunishments`, `/modmail`
+**Common moderation commands:** `/warn`, `/suspend`, `/mute`, `/kick`, `/ban`, `/find`, `/modmail`

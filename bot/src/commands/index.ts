@@ -18,7 +18,7 @@ import { warn } from './moderation/security/warn.js';
 import { suspend } from './moderation/security/suspend.js';
 import { unsuspend } from './moderation/security/unsuspend.js';
 import { removepunishment } from './moderation/security/removepunishment.js';
-import { checkpunishments } from './moderation/security/checkpunishments.js';
+import { find } from './moderation/security/find.js';
 import { addnote } from './moderation/security/addnote.js';
 import { logrun } from './organizer/logrun.js';
 import { logkey } from './organizer/logkey.js';
@@ -84,7 +84,7 @@ export const commands: SlashCommand[] = [
     withMiddleware(suspend),
     withMiddleware(unsuspend),
     withMiddleware(removepunishment),
-    withMiddleware(checkpunishments),
+    withMiddleware(find),
     withMiddleware(addnote),
     withMiddleware(logrun),
     withMiddleware(logkey),

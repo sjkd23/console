@@ -87,7 +87,7 @@ export async function setupPagination(
             // Only allow the user who invoked the command to use buttons
             if (i.user.id !== userId) {
                 i.reply({
-                    content: '❌ You cannot use these buttons. Use `/checkpunishments` to view your own results.',
+                    content: '❌ You cannot use these buttons. Use `/find` to view your own results.',
                     ephemeral: true,
                 }).catch(() => {});
                 return false;

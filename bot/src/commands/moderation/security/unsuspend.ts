@@ -98,7 +98,7 @@ export const unsuspend: SlashCommand = {
                 );
 
                 if (activeSuspensions.length === 0) {
-                    await interaction.editReply(`❌ **No Active Suspension**\n\n<@${targetUser.id}> does not have any active suspensions.\n\nUse \`/checkpunishments\` to view their punishment history.`);
+                    await interaction.editReply(`❌ **No Active Suspension**\n\n<@${targetUser.id}> does not have any active suspensions.\n\nUse \`/find\` to view their full user information and history.`);
                     return;
                 }
 

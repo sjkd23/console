@@ -78,7 +78,7 @@ For local development without Docker, install dependencies and run `npm run dev`
 
 - **Raids:** `/run`, `/headcount`, `/logrun`
 - **Verification:** `/configverification`, `/verify`
-- **Moderation:** `/warn`, `/suspend`, `/checkpunishments`
+- **Moderation:** `/warn`, `/suspend`, `/find`
 - **Quota:** `/configquota`, `/stats`, `/logkey`
 
 ## License

@@ -98,7 +98,7 @@ export const unmute: SlashCommand = {
                 );
 
                 if (activeMutes.length === 0) {
-                    await interaction.editReply(`❌ **No Active Mute**\n\n<@${targetUser.id}> does not have any active mutes.\n\nUse \`/checkpunishments\` to view their punishment history.`);
+                    await interaction.editReply(`❌ **No Active Mute**\n\n<@${targetUser.id}> does not have any active mutes.\n\nUse \`/find\` to view their full user information and history.`);
                     return;
                 }
 
