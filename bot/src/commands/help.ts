@@ -289,6 +289,12 @@ function getCommandHelp(commandName: string): CommandHelp | null {
             usage: '/syncteam',
             examples: ['/syncteam - Sync Team role to all staff'],
         },
+        forcesync: {
+            name: 'forcesync',
+            description: 'Force-sync all verified members in the server with the database. Extracts IGNs from nicknames and bulk syncs to database.',
+            usage: '/forcesync',
+            examples: ['/forcesync - Force-sync all verified members to database'],
+        },
         purge: {
             name: 'purge',
             description: 'Bulk delete messages in the current channel.',
