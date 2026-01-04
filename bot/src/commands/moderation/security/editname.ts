@@ -121,6 +121,9 @@ export const editname: SlashCommand = {
             return;
         }
 
+        // Capture current nickname to preserve prefixes
+        const currentNickname = targetMember.nickname || targetMember.user.username;
+
         try {
             // Get actor's role IDs for authorization
             const actorRoles = getMemberRoleIds(invokerMember);
@@ -138,10 +141,22 @@ export const editname: SlashCommand = {
             let nicknameError = '';
             try {
                 const targetMember = await interaction.guild.members.fetch(targetUser.id);
-                // Preserve alt IGN if it exists
-                const nickname = result.alt_ign 
+                
+                // Extract prefix from current nickname (e.g., "!!!" from "!!!SJKD")
+                // Prefix = leading special characters before the IGN
+                const prefixMatch = currentNickname.match(/^([^A-Za-z0-9]+)/);
+                const prefix = prefixMatch ? prefixMatch[1] : '';
+                
+                // Build new nickname: prefix + new IGN + optional alt IGN
+                let nickname = result.alt_ign 
                     ? `${result.ign} | ${result.alt_ign}`
                     : result.ign;
+                
+                // Apply prefix if it exists
+                if (prefix) {
+                    nickname = prefix + nickname;
+                }
+                
                 await targetMember.setNickname(nickname, `IGN updated by ${interaction.user.tag}`);
             } catch (nickErr: any) {
                 nicknameUpdated = false;
