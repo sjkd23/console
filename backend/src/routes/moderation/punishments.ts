@@ -250,15 +250,15 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
 
     /**
      * GET /punishments/expired
-     * Get all expired suspensions that need role removal
-     * Returns guild_id, user_id, and punishment id for each
+     * Get all expired suspensions and mutes that need role removal
+     * Returns guild_id, user_id, type, and punishment id for each
      */
     app.get('/punishments/expired', async (req, reply) => {
-        // First deactivate any expired suspensions
+        // First deactivate any expired suspensions and mutes
         await deactivateExpiredSuspensions();
 
         try {
-            // Get all suspensions that:
+            // Get all suspensions and mutes that:
             // 1. Are inactive (active=FALSE) 
             // 2. Expired naturally (expires_at <= NOW())
             // 3. Were NOT manually removed (removed_by IS NULL)
@@ -267,13 +267,14 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
                 guild_id: string;
                 user_id: string;
                 id: string;
+                type: string;
                 moderator_id: string;
                 reason: string;
                 expires_at: string;
             }>(
-                `SELECT guild_id, user_id, id, moderator_id, reason, expires_at
+                `SELECT guild_id, user_id, id, type, moderator_id, reason, expires_at
                  FROM punishment
-                 WHERE type = 'suspend'
+                 WHERE type IN ('suspend', 'mute')
                    AND active = FALSE
                    AND expires_at IS NOT NULL
                    AND expires_at <= NOW()
@@ -287,8 +288,8 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
                 expired: result.rows,
             });
         } catch (err) {
-            logger.error({ err }, 'Failed to get expired suspensions');
-            return Errors.internal(reply, 'Failed to retrieve expired suspensions');
+            logger.error({ err }, 'Failed to get expired punishments');
+            return Errors.internal(reply, 'Failed to retrieve expired punishments');
         }
     });
 
@@ -335,11 +336,15 @@ export default async function punishmentsRoutes(app: FastifyInstance) {
 
             // Mark as processed (set removed_at and removed_by to indicate it was handled)
             // Use NULL for removed_by since this is a system action
+            const removalReason = punishment.type === 'mute' 
+                ? 'Mute expired automatically' 
+                : 'Suspension expired automatically';
+            
             await query(
                 `UPDATE punishment
-                 SET removed_at = NOW(), removed_by = NULL, removal_reason = 'Suspension expired automatically'
+                 SET removed_at = NOW(), removed_by = NULL, removal_reason = $2
                  WHERE id = $1`,
-                [id]
+                [id, removalReason]
             );
 
             // Log audit event for expiration with NULL actor (system action)

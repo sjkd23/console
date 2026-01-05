@@ -25,10 +25,11 @@ interface ExpiredRun {
     ping_message_id: string | null;
 }
 
-interface ExpiredSuspension {
+interface ExpiredPunishment {
     guild_id: string;
     user_id: string;
     id: string;
+    type: 'suspend' | 'mute';
     moderator_id: string;
     reason: string;
     expires_at: string;
@@ -207,35 +208,36 @@ async function checkExpiredRuns(client: Client): Promise<void> {
 }
 
 /**
- * Check all guilds for expired suspensions and remove the suspended role
+ * Check all guilds for expired suspensions and mutes and remove the respective roles
  * This runs periodically to ensure users don't keep the role after expiration
  */
-async function checkExpiredSuspensions(client: Client): Promise<void> {
-    logger.debug('Starting expired suspensions check');
+async function checkExpiredPunishments(client: Client): Promise<void> {
+    logger.debug('Starting expired punishments check');
     
-    // Get list of expired suspensions that still need role removal
-    const response = await getJSON<{ expired: ExpiredSuspension[] }>('/punishments/expired');
+    // Get list of expired suspensions and mutes that still need role removal
+    const response = await getJSON<{ expired: ExpiredPunishment[] }>('/punishments/expired');
     const { expired } = response;
 
     if (expired.length === 0) {
-        logger.debug('No expired suspensions found');
+        logger.debug('No expired punishments found');
         return;
     }
 
-    logger.info(`Found ${expired.length} expired suspensions to process`);
+    logger.info(`Found ${expired.length} expired punishments to process`);
 
     let successCount = 0;
     let failureCount = 0;
 
-    // Process each expired suspension
-    for (const suspension of expired) {
+    // Process each expired punishment (suspension or mute)
+    for (const punishment of expired) {
         try {
             // Get the guild
-            const guild = client.guilds.cache.get(suspension.guild_id);
+            const guild = client.guilds.cache.get(punishment.guild_id);
             if (!guild) {
                 logger.warn(`Guild not found`, { 
-                    guildId: suspension.guild_id,
-                    suspensionId: suspension.id 
+                    guildId: punishment.guild_id,
+                    punishmentId: punishment.id,
+                    type: punishment.type
                 });
                 failureCount++;
                 continue;
@@ -243,57 +245,66 @@ async function checkExpiredSuspensions(client: Client): Promise<void> {
 
             // Get guild roles
             const rolesResponse = await getJSON<{ roles: Record<string, string | null> }>(
-                `/guilds/${suspension.guild_id}/roles`
+                `/guilds/${punishment.guild_id}/roles`
             );
-            const suspendedRoleId = rolesResponse.roles.suspended;
+            
+            // Get the appropriate role based on punishment type
+            const roleKey = punishment.type === 'mute' ? 'muted' : 'suspended';
+            const roleId = rolesResponse.roles[roleKey];
 
-            if (!suspendedRoleId) {
-                logger.warn(`No suspended role configured`, { 
-                    guildId: suspension.guild_id,
-                    suspensionId: suspension.id 
+            if (!roleId) {
+                logger.warn(`No ${roleKey} role configured`, { 
+                    guildId: punishment.guild_id,
+                    punishmentId: punishment.id,
+                    type: punishment.type
                 });
                 failureCount++;
                 continue;
             }
 
             // Get the member
-            const member = await guild.members.fetch(suspension.user_id).catch(() => null);
+            const member = await guild.members.fetch(punishment.user_id).catch(() => null);
             if (!member) {
                 logger.warn(`Member not found in guild (may have left)`, { 
-                    userId: suspension.user_id,
-                    guildId: suspension.guild_id,
-                    suspensionId: suspension.id 
+                    userId: punishment.user_id,
+                    guildId: punishment.guild_id,
+                    punishmentId: punishment.id,
+                    type: punishment.type
                 });
                 // Still mark as processed even if member left
-                await postJSON(`/punishments/${suspension.id}/expire`, {
+                await postJSON(`/punishments/${punishment.id}/expire`, {
                     processed_by: client.user!.id
                 });
                 successCount++;
                 continue;
             }
 
-            // Check if they have the suspended role
+            // Check if they have the punishment role
             let roleRemoved = false;
-            if (member.roles.cache.has(suspendedRoleId)) {
-                await member.roles.remove(suspendedRoleId, `Suspension expired - ${suspension.id}`);
-                logger.info(`Removed suspended role`, {
-                    userId: suspension.user_id,
+            const roleName = punishment.type === 'mute' ? 'muted' : 'suspended';
+            
+            if (member.roles.cache.has(roleId)) {
+                await member.roles.remove(roleId, `${punishment.type === 'mute' ? 'Mute' : 'Suspension'} expired - ${punishment.id}`);
+                logger.info(`Removed ${roleName} role`, {
+                    userId: punishment.user_id,
                     userTag: member.user.tag,
-                    guildId: suspension.guild_id,
+                    guildId: punishment.guild_id,
                     guildName: guild.name,
-                    suspensionId: suspension.id
+                    punishmentId: punishment.id,
+                    type: punishment.type
                 });
                 roleRemoved = true;
             } else {
-                logger.debug(`Member already doesn't have suspended role`, {
-                    userId: suspension.user_id,
+                logger.debug(`Member already doesn't have ${roleName} role`, {
+                    userId: punishment.user_id,
                     userTag: member.user.tag,
-                    guildId: suspension.guild_id
+                    guildId: punishment.guild_id,
+                    type: punishment.type
                 });
             }
 
-            // Mark the suspension as expired/processed in the backend
-            await postJSON(`/punishments/${suspension.id}/expire`, {
+            // Mark the punishment as expired/processed in the backend
+            await postJSON(`/punishments/${punishment.id}/expire`, {
                 processed_by: client.user!.id
             });
 
@@ -302,7 +313,7 @@ async function checkExpiredSuspensions(client: Client): Promise<void> {
             // Log to punishment_log channel if configured
             try {
                 const channelsResponse = await getJSON<{ channels: Record<string, string | null> }>(
-                    `/guilds/${suspension.guild_id}/channels`
+                    `/guilds/${punishment.guild_id}/channels`
                 );
                 const punishmentLogChannelId = channelsResponse.channels.punishment_log;
 
@@ -310,16 +321,18 @@ async function checkExpiredSuspensions(client: Client): Promise<void> {
                     const logChannel = await guild.channels.fetch(punishmentLogChannelId).catch(() => null);
 
                     if (logChannel && logChannel.isTextBased()) {
-                        const expiresAt = new Date(suspension.expires_at);
+                        const expiresAt = new Date(punishment.expires_at);
+                        const title = punishment.type === 'mute' ? '⏰ Mute Expired' : '⏰ Suspension Expired';
                         
                         const logEmbed = new EmbedBuilder()
-                            .setTitle('⏰ Suspension Expired')
+                            .setTitle(title)
                             .setColor(0x00FF00) // Green
                             .addFields(
-                                { name: 'User', value: `<@${suspension.user_id}>`, inline: true },
-                                { name: 'Punishment ID', value: suspension.id, inline: true },
-                                { name: 'Original Moderator', value: `<@${suspension.moderator_id}>`, inline: true },
-                                { name: 'Original Reason', value: suspension.reason, inline: false },
+                                { name: 'User', value: `<@${punishment.user_id}>`, inline: true },
+                                { name: 'Punishment ID', value: punishment.id, inline: true },
+                                { name: 'Type', value: punishment.type === 'mute' ? 'Mute' : 'Suspension', inline: true },
+                                { name: 'Original Moderator', value: `<@${punishment.moderator_id}>`, inline: true },
+                                { name: 'Original Reason', value: punishment.reason, inline: false },
                                 { name: 'Expired At', value: `<t:${Math.floor(expiresAt.getTime() / 1000)}:F>`, inline: false },
                                 { name: 'Role Removed', value: roleRemoved ? 'Yes' : 'Already removed or member left', inline: false }
                             )
@@ -327,27 +340,30 @@ async function checkExpiredSuspensions(client: Client): Promise<void> {
 
                         await (logChannel as TextChannel).send({ embeds: [logEmbed] });
                         logger.debug(`Logged expiration to punishment_log channel`, {
-                            guildId: suspension.guild_id,
-                            suspensionId: suspension.id
+                            guildId: punishment.guild_id,
+                            punishmentId: punishment.id,
+                            type: punishment.type
                         });
                     }
                 }
             } catch (logErr) {
                 logger.warn(`Failed to log expiration to punishment_log channel`, { 
-                    suspensionId: suspension.id,
+                    punishmentId: punishment.id,
+                    type: punishment.type,
                     error: logErr instanceof Error ? logErr.message : String(logErr)
                 });
             }
         } catch (err) {
             failureCount++;
-            logger.error(`Failed to process suspension`, { 
-                suspensionId: suspension.id,
+            logger.error(`Failed to process punishment`, { 
+                punishmentId: punishment.id,
+                type: punishment.type,
                 err 
             });
         }
     }
 
-    logger.info(`Completed expired suspensions check`, {
+    logger.info(`Completed expired punishments check`, {
         total: expired.length,
         succeeded: successCount,
         failed: failureCount
@@ -579,9 +595,9 @@ export function startScheduledTasks(client: Client): () => void {
             handler: checkExpiredRuns
         },
         {
-            name: 'Expired Suspensions',
+            name: 'Expired Punishments',
             intervalMinutes: 2,
-            handler: checkExpiredSuspensions
+            handler: checkExpiredPunishments
         },
         {
             name: 'Expired Verification Sessions',
