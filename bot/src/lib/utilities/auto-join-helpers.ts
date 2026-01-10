@@ -10,6 +10,10 @@ import { updateRunParticipation } from './run-embed-helpers.js';
 import { logRaidJoin } from '../logging/raid-logger.js';
 import { createLogger } from '../logging/logger.js';
 import { getParticipants, updateParticipantsList } from '../state/headcount-state.js';
+import { getAllOrganizerPanelsForRun } from '../state/organizer-panel-tracker.js';
+import { getActiveHeadcountPanels } from '../state/headcount-panel-tracker.js';
+import { updateRunOrganizerPanel } from '../../interactions/buttons/raids/organizer-panel.js';
+import { updateHeadcountOrganizerPanel } from '../../interactions/buttons/raids/headcount-organizer-panel.js';
 
 const logger = createLogger('AutoJoin');
 
@@ -85,6 +89,25 @@ export async function autoJoinOrganizerToRun(
             });
         }
 
+        // Auto-refresh any active organizer panels for this run
+        // This ensures the raider count updates in real-time when the organizer joins
+        const activePanels = getAllOrganizerPanelsForRun(runId.toString());
+        if (activePanels.length > 0) {
+            for (const { handle } of activePanels) {
+                try {
+                    // Update the panel using the handle (knows how to edit itself correctly)
+                    await updateRunOrganizerPanel(handle, runId, guild.id);
+                } catch (err) {
+                    // Panel might be closed or expired - this is expected behavior
+                    logger.debug('Failed to auto-refresh organizer panel after auto-join', {
+                        guildId: guild.id,
+                        runId,
+                        error: err instanceof Error ? err.message : String(err)
+                    });
+                }
+            }
+        }
+
         logger.info('Organizer auto-joined to run', {
             guildId: guild.id,
             runId,
@@ -157,6 +180,41 @@ export async function autoJoinOrganizerToHeadcount(
                 messageId: headcountMessage.id,
                 error: e instanceof Error ? e.message : String(e)
             });
+        }
+
+        // Auto-refresh any active headcount organizer panels for this message
+        // This ensures the participant count updates in real-time when the organizer joins
+        const activePanels = getActiveHeadcountPanels(headcountMessage.id);
+        if (activePanels.length > 0) {
+            // Extract dungeon codes from the button components
+            const dungeonCodes: string[] = [];
+            for (const row of headcountMessage.components) {
+                if ('components' in row) {
+                    for (const component of row.components) {
+                        if ('customId' in component && component.customId?.startsWith('headcount:key:')) {
+                            const parts = component.customId.split(':');
+                            const dungeonCode = parts[3];
+                            if (dungeonCode && !dungeonCodes.includes(dungeonCode)) {
+                                dungeonCodes.push(dungeonCode);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Update all registered panel handles
+            for (const handle of activePanels) {
+                try {
+                    await updateHeadcountOrganizerPanel(handle, headcountMessage, updatedEmbed, dungeonCodes);
+                } catch (err) {
+                    // Panel might be closed or expired - this is expected behavior
+                    logger.debug('Failed to auto-refresh headcount organizer panel after auto-join', {
+                        guildId: guild.id,
+                        messageId: headcountMessage.id,
+                        error: err instanceof Error ? err.message : String(err)
+                    });
+                }
+            }
         }
 
         logger.info('Organizer auto-joined to headcount', {

@@ -29,6 +29,7 @@ import { configquota } from './configs/configquota.js';
 import { configpoints } from './configs/configpoints.js';
 import { configverification } from './configs/configverification.js';
 import { configrolepings } from './configs/configrolepings.js';
+import { createrole } from './configs/createrole.js';
 import { help } from './help.js';
 import { ping } from './ping.js';
 import { addquotapoints } from './moderation/officer/addquotapoints.js';
@@ -95,6 +96,7 @@ export const commands: SlashCommand[] = [
     withMiddleware(configpoints),
     withMiddleware(configverification),
     withMiddleware(configrolepings),
+    withMiddleware(createrole),
     withMiddleware(help),
     withMiddleware(ping),
     withMiddleware(addquotapoints),

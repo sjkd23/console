@@ -1175,3 +1175,133 @@ export async function bulkSyncMembers(
         ...payload,
     }, { guildId });
 }
+
+// ===== CUSTOM ROLE VERIFICATION =====
+
+export interface CustomRoleVerificationConfig {
+    id: number;
+    guild_id: string;
+    role_id: string;
+    role_channel_id: string;
+    verification_channel_id: string;
+    instructions: string;
+    role_description: string | null;
+    example_image_url: string | null;
+    panel_message_id: string | null;
+    created_at: string;
+    created_by_user_id: string;
+}
+
+export interface CustomRoleVerificationSession {
+    id: number;
+    guild_id: string;
+    user_id: string;
+    role_verification_id: number;
+    screenshot_url: string | null;
+    ticket_message_id: string | null;
+    status: 'pending_screenshot' | 'pending_review' | 'approved' | 'denied' | 'cancelled' | 'expired';
+    reviewed_by_user_id: string | null;
+    reviewed_at: string | null;
+    denial_reason: string | null;
+    created_at: string;
+    updated_at: string;
+    expires_at: string;
+    // Joined from config
+    role_id?: string;
+    role_channel_id?: string;
+    verification_channel_id?: string;
+    instructions?: string;
+    role_description?: string;
+    example_image_url?: string;
+}
+
+/** Create or update custom role verification config */
+export async function createCustomRoleVerification(payload: {
+    guild_id: string;
+    role_id: string;
+    role_channel_id: string;
+    verification_channel_id: string;
+    instructions: string;
+    role_description?: string;
+    example_image_url?: string;
+    created_by_user_id: string;
+}): Promise<CustomRoleVerificationConfig> {
+    return postJSON('/custom-role-verification', payload, { guildId: payload.guild_id });
+}
+
+/** Get custom role verification config by role */
+export async function getCustomRoleVerificationConfig(
+    guildId: string,
+    roleId: string
+): Promise<CustomRoleVerificationConfig> {
+    return getJSON(`/custom-role-verification/${guildId}/${roleId}`, { guildId });
+}
+
+/** Get all custom role verification configs for a guild */
+export async function getAllCustomRoleVerifications(
+    guildId: string
+): Promise<CustomRoleVerificationConfig[]> {
+    return getJSON(`/custom-role-verification/${guildId}`, { guildId });
+}
+
+/** Update custom role verification config */
+export async function updateCustomRoleVerificationConfig(
+    id: number,
+    updates: {
+        role_channel_id?: string;
+        verification_channel_id?: string;
+        instructions?: string;
+        role_description?: string;
+        example_image_url?: string;
+        panel_message_id?: string;
+    }
+): Promise<CustomRoleVerificationConfig> {
+    return patchJSON(`/custom-role-verification/${id}`, updates);
+}
+
+/** Delete custom role verification config */
+export async function deleteCustomRoleVerification(id: number): Promise<void> {
+    await makeRequest('DELETE', `/custom-role-verification/${id}`, undefined);
+}
+
+/** Create custom role verification session */
+export async function createCustomRoleVerificationSession(payload: {
+    guild_id: string;
+    user_id: string;
+    role_verification_id: number;
+}): Promise<CustomRoleVerificationSession> {
+    return postJSON('/custom-role-verification/session', payload, { guildId: payload.guild_id });
+}
+
+/** Get custom role verification session by user ID (for DMs) */
+export async function getCustomRoleVerificationSessionByUser(
+    userId: string
+): Promise<CustomRoleVerificationSession> {
+    return getJSON(`/custom-role-verification/session/user/${userId}`, { userId });
+}
+
+/** Get custom role verification session by session ID */
+export async function getCustomRoleVerificationSession(
+    sessionId: number
+): Promise<CustomRoleVerificationSession> {
+    return getJSON(`/custom-role-verification/session/${sessionId}`);
+}
+
+/** Update custom role verification session */
+export async function updateCustomRoleVerificationSession(
+    sessionId: number,
+    updates: {
+        screenshot_url?: string;
+        ticket_message_id?: string;
+        status?: 'pending_screenshot' | 'pending_review' | 'approved' | 'denied' | 'cancelled' | 'expired';
+        reviewed_by_user_id?: string;
+        denial_reason?: string;
+    }
+): Promise<CustomRoleVerificationSession> {
+    return patchJSON(`/custom-role-verification/session/${sessionId}`, updates);
+}
+
+/** Delete custom role verification session */
+export async function deleteCustomRoleVerificationSession(sessionId: number): Promise<void> {
+    await makeRequest('DELETE', `/custom-role-verification/session/${sessionId}`, undefined);
+}

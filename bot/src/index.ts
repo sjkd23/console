@@ -76,6 +76,12 @@ import {
     handleVerificationApproveModal,
 } from './interactions/buttons/verification/approve-deny.js';
 import {
+    handleCustomRoleGetVerified,
+    handleCustomRoleApprove,
+    handleCustomRoleDeny,
+    handleCustomRoleDenyModal,
+} from './interactions/buttons/config/custom-role-verification.js';
+import {
     handleModmailConfirm,
     handleModmailCancel,
 } from './commands/moderation/modmail.js';
@@ -272,6 +278,23 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId.startsWith('verification:deny:')) {
                 if (!await applyButtonRateLimit(interaction, 'verification:deny')) return;
                 await safeHandleInteraction(interaction, () => handleVerificationDeny(interaction), { ephemeral: true });
+                return;
+            }
+
+            // Handle custom role verification buttons
+            if (interaction.customId.startsWith('customrole:get_verified:')) {
+                if (!await applyButtonRateLimit(interaction, 'customrole:start')) return;
+                await safeHandleInteraction(interaction, () => handleCustomRoleGetVerified(interaction), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('customrole:approve:')) {
+                if (!await applyButtonRateLimit(interaction, 'customrole:approve')) return;
+                await safeHandleInteraction(interaction, () => handleCustomRoleApprove(interaction), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('customrole:deny:')) {
+                if (!await applyButtonRateLimit(interaction, 'customrole:deny')) return;
+                await safeHandleInteraction(interaction, () => handleCustomRoleDeny(interaction), { ephemeral: true });
                 return;
             }
 
@@ -590,6 +613,10 @@ client.on('interactionCreate', async (interaction) => {
 
             if (interaction.customId.startsWith('verification:approve_modal:') || interaction.customId.startsWith('verification:approve_confirm:')) {
                 await safeHandleInteraction(interaction, () => handleVerificationApproveModal(interaction), { ephemeral: true });
+                return;
+            }
+            if (interaction.customId.startsWith('customrole:deny_modal:')) {
+                await safeHandleInteraction(interaction, () => handleCustomRoleDenyModal(interaction), { ephemeral: true });
                 return;
             }
             if (interaction.customId.startsWith('quota_basic_modal:')) {

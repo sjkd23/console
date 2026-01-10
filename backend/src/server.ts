@@ -13,6 +13,7 @@ import notesRoutes from './routes/moderation/notes.js';
 import verificationRoutes from './routes/system/verification.js';
 import commandLogRoutes from './routes/admin/command-log.js';
 import modmailRoutes from './routes/moderation/modmail.js';
+import customRoleVerificationRoutes from './routes/system/custom-role-verification.js';
 
 const app = Fastify({ logger: true });
 
@@ -28,6 +29,7 @@ await app.register(notesRoutes, { prefix: '/v1' });
 await app.register(verificationRoutes, { prefix: '/v1' });
 await app.register(commandLogRoutes, { prefix: '/v1' });
 await app.register(modmailRoutes, { prefix: '/v1' });
+await app.register(customRoleVerificationRoutes, { prefix: '/v1' });
 
 app.listen({ port: backendConfig.PORT, host: '0.0.0.0' })
     .then(addr => app.log.info(`Backend listening on ${addr}`))
