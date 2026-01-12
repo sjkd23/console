@@ -19,6 +19,18 @@ import { formatErrorMessage } from '../lib/errors/error-handler.js';
 const ENTRIES_PER_PAGE = 25;
 
 /**
+ * Format a Date object to a readable UTC string
+ */
+function formatUTCDate(date: Date): string {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+}
+
+/**
  * Create pagination buttons for leaderboard
  */
 function createLeaderboardButtons(
@@ -214,13 +226,13 @@ export const leaderboard: SlashCommand = {
         .addStringOption(option =>
             option
                 .setName('since')
-                .setDescription('Start date (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss)')
+                .setDescription('Start date in UTC (YYYY-MM-DD or ISO 8601 with timezone)')
                 .setRequired(false)
         )
         .addStringOption(option =>
             option
                 .setName('until')
-                .setDescription('End date (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss)')
+                .setDescription('End date in UTC (YYYY-MM-DD or ISO 8601 with timezone)')
                 .setRequired(false)
         )
         .setDMPermission(false),
@@ -260,11 +272,14 @@ export const leaderboard: SlashCommand = {
         const until = interaction.options.getString('until');
 
         // Validate date formats if provided
+        let sinceDate: Date | undefined;
+        let untilDate: Date | undefined;
+
         if (since) {
-            const sinceDate = new Date(since);
+            sinceDate = new Date(since);
             if (isNaN(sinceDate.getTime())) {
                 await interaction.reply({
-                    content: 'Invalid "since" date. Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.',
+                    content: '❌ Invalid "since" date. Use formats like:\n• `2024-12-01` (midnight UTC)\n• `2024-12-01T12:00:00Z` (12pm UTC)\n• `2024-12-01T12:00:00-05:00` (12pm EST)',
                     flags: MessageFlags.Ephemeral,
                 });
                 return;
@@ -272,14 +287,23 @@ export const leaderboard: SlashCommand = {
         }
 
         if (until) {
-            const untilDate = new Date(until);
+            untilDate = new Date(until);
             if (isNaN(untilDate.getTime())) {
                 await interaction.reply({
-                    content: 'Invalid "until" date. Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss.',
+                    content: '❌ Invalid "until" date. Use formats like:\n• `2024-12-01` (midnight UTC)\n• `2024-12-01T12:00:00Z` (12pm UTC)\n• `2024-12-01T12:00:00-05:00` (12pm EST)',
                     flags: MessageFlags.Ephemeral,
                 });
                 return;
             }
+        }
+
+        // Validate date range
+        if (sinceDate && untilDate && sinceDate >= untilDate) {
+            await interaction.reply({
+                content: '❌ The "since" date must be before the "until" date.',
+                flags: MessageFlags.Ephemeral,
+            });
+            return;
         }
 
         // Defer reply (backend call may take a moment)
@@ -327,12 +351,12 @@ export const leaderboard: SlashCommand = {
                     : 'quota points';
 
                 let dateRangeText = '';
-                if (since && until) {
-                    dateRangeText = ` between **${since}** and **${until}**`;
-                } else if (since) {
-                    dateRangeText = ` since **${since}**`;
-                } else if (until) {
-                    dateRangeText = ` until **${until}**`;
+                if (sinceDate && untilDate) {
+                    dateRangeText = `\n**Range:** ${formatUTCDate(sinceDate)} → ${formatUTCDate(untilDate)}`;
+                } else if (sinceDate) {
+                    dateRangeText = `\n**Since:** ${formatUTCDate(sinceDate)}`;
+                } else if (untilDate) {
+                    dateRangeText = `\n**Until:** ${formatUTCDate(untilDate)}`;
                 }
 
                 const embed = new EmbedBuilder()
@@ -366,12 +390,12 @@ export const leaderboard: SlashCommand = {
 
             // Build date range text for embed description
             let dateRangeText = '';
-            if (since && until) {
-                dateRangeText = `\n**Date Range:** ${since} to ${until}`;
-            } else if (since) {
-                dateRangeText = `\n**Since:** ${since}`;
-            } else if (until) {
-                dateRangeText = `\n**Until:** ${until}`;
+            if (sinceDate && untilDate) {
+                dateRangeText = `\n**Range:** ${formatUTCDate(sinceDate)} → ${formatUTCDate(untilDate)}`;
+            } else if (sinceDate) {
+                dateRangeText = `\n**Since:** ${formatUTCDate(sinceDate)}`;
+            } else if (untilDate) {
+                dateRangeText = `\n**Until:** ${formatUTCDate(untilDate)}`;
             }
 
             // Build sort order text

@@ -237,9 +237,15 @@ function getCommandHelp(commandName: string): CommandHelp | null {
         },
         leaderboard: {
             name: 'leaderboard',
-            description: 'View server leaderboards for various activities and statistics.',
-            usage: '/leaderboard',
-            examples: ['/leaderboard - Opens leaderboard selector'],
+            description: 'View server leaderboards for various activities and statistics. Filter by dungeon, date range, and sort order.',
+            usage: '/leaderboard category:<category> dungeon:<dungeon> [sort:<order>] [since:<date>] [until:<date>]',
+            examples: [
+                '/leaderboard category:runs_organized dungeon:all - View all-time runs organized',
+                '/leaderboard category:keys_popped dungeon:Void sort:desc - View Void key leaderboard',
+                '/leaderboard category:dungeon_completions dungeon:Lost Halls since:2024-12-01 - View completions since Dec 1st',
+                '/leaderboard category:quota_points dungeon:all since:2024-12-01T00:00:00Z until:2024-12-31T23:59:59Z - December quota points',
+                '/leaderboard category:points dungeon:all since:2024-12-01T12:00:00-05:00 - Points since Dec 1st noon EST',
+            ],
         },
         setroles: {
             name: 'setroles',
