@@ -232,13 +232,8 @@ export async function handleHeadcountKey(
             const organizerId = organizerMatch ? organizerMatch[1] : '';
             
             if (organizerId) {
-                // Count total keys for this dungeon
-                let totalDungeonKeys = 0;
-                if (dungeonKeyMap) {
-                    for (const userIds of dungeonKeyMap.values()) {
-                        totalDungeonKeys += userIds.size;
-                    }
-                }
+                // Count keys for this specific key type only
+                const specificKeyCount = keyTypeSet.size;
                 
                 await logKeyReaction(
                     btn.client,
@@ -253,7 +248,7 @@ export async function handleHeadcountKey(
                     btn.user.id,
                     keyTypeDisplay,
                     keyTypeSet.has(userId) ? 'added' : 'removed',
-                    totalDungeonKeys
+                    specificKeyCount
                 );
             }
         } catch (e) {
